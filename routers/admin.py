@@ -25,7 +25,6 @@ async def get_system_audit_logs(
     DatabaseService.create_audit_log(
         db=db,
         user_id=current_user.id,
-        action="admin_audit_logs_accessed",
         category="system_admin",
         action_details=f"Admin {current_user.email} accessed system audit logs with filters: action={action}, limit={limit}",
         risk_level="low",
@@ -58,7 +57,6 @@ async def get_audit_logs_by_date_range(
     DatabaseService.create_audit_log(
         db=db,
         user_id=current_user.id,
-        action="admin_audit_logs_date_range_accessed",
         category="system_admin",
         action_details=f"Admin {current_user.email} accessed audit logs for date range {start_date} to {end_date}",
         risk_level="low",
