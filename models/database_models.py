@@ -97,6 +97,10 @@ class User(Base):
     assigned_tickets = relationship("PatientTicket", back_populates="assigned_staff")
     notes = relationship("TicketNote", back_populates="staff_member")
     tasks = relationship("StaffTask", back_populates="assigned_staff")
+    audit_logs = relationship("AuditLog", back_populates="user")
+
+
+
 
 class AllowedEmail(Base):
     """Table to store emails of organization members allowed to register."""
@@ -458,14 +462,9 @@ class AuditLog(Base):
     # Action Details
     user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
     action = Column(String(100), nullable=False)
-    table_name = Column(String(100), nullable=False)
-    record_id = Column(Integer, nullable=True)
+    action_details = Column(String(500), nullable=True)
     
-    # Changes
-    old_values = Column(JSON, nullable=True)
-    new_values = Column(JSON, nullable=True)
-    
-    # Context
+    # Geo location and user agent
     ip_address = Column(String(45), nullable=True)
     user_agent = Column(String(500), nullable=True)
     
@@ -473,7 +472,7 @@ class AuditLog(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     
     # Relationships
-    user = relationship("User")
+    user = relationship("User", back_populates="audit_logs")
 
 # Database dependency
 def get_db():
