@@ -14,12 +14,13 @@ class DatabaseService:
     @staticmethod
     def create_audit_log(
         db: Session,
-        user_id: Optional[int],
+        user_id: int,
         category: str,
-        action_details: Optional[str] = None,
+        action_details: str,
         resource_type: Optional[str] = None,
         resource_id: Optional[int] = None,
-        risk_level: str = "low",
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
         request: Optional[Request] = None
     ) -> Optional[AuditLog]:
         """
@@ -37,9 +38,6 @@ class DatabaseService:
         """
         try:
             # Extract IP address and user agent from request if provided
-            ip_address = None
-            user_agent = None
-            
             if request:
                 # Get client IP address
                 if request.client:
@@ -55,11 +53,10 @@ class DatabaseService:
             # Create audit log entry
             audit_log = AuditLog(
                 user_id=user_id,
-                category=category,
+                category=category,  # Use category field
                 action_details=action_details,
-                resource_type=resource_type,
-                resource_id=resource_id,
-                risk_level=risk_level,
+                table_name=resource_type or "system",  # Use table_name field
+                record_id=resource_id,  # Use record_id field
                 ip_address=ip_address,
                 user_agent=user_agent
             )
@@ -104,7 +101,8 @@ class DatabaseService:
             for log in logs:
                 log_list.append({
                     "id": log.id,
-                    "category": log.category,
+                    "user_id": log.user_id,
+                    "category": log.category,  # Fixed to use category field
                     "action_details": log.action_details,
                     "ip_address": log.ip_address,
                     "user_agent": log.user_agent,
@@ -131,15 +129,15 @@ class DatabaseService:
     @staticmethod
     def get_system_audit_logs(
         db: Session,
-        action: Optional[str] = None,
+        category: Optional[str] = None,  # Changed from action to category
         limit: int = 100
     ) -> Dict[str, Any]:
         """
-        Get system-wide audit logs with optional action filtering
+        Get system-wide audit logs with optional category filtering
         
         Args:
             db: Database session
-            action: Optional filter for specific action type
+            category: Optional filter for specific category type
             limit: Maximum number of logs to return
             
         Returns:
@@ -148,8 +146,8 @@ class DatabaseService:
         try:
             query = db.query(AuditLog)
             
-            if action:
-                query = query.filter(AuditLog.action == action)
+            if category:
+                query = query.filter(AuditLog.category == category)  
             
             logs = query.order_by(desc(AuditLog.created_at)).limit(limit).all()
             
@@ -158,7 +156,7 @@ class DatabaseService:
                 log_list.append({
                     "id": log.id,
                     "user_id": log.user_id,
-                    "category": log.category,
+                    "category": log.category,  # Changed from action to category
                     "action_details": log.action_details,
                     "ip_address": log.ip_address,
                     "user_agent": log.user_agent,
@@ -166,7 +164,7 @@ class DatabaseService:
                 })
             
             return {
-                "action_filter": action,
+                "category_filter": category,  # Changed from action_filter to category_filter
                 "logs": log_list,
                 "total_count": len(log_list),
                 "limit": limit
@@ -175,7 +173,7 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"Error retrieving system audit logs: {e}")
             return {
-                "action_filter": action,
+                "category_filter": category,  # Changed from action_filter to category_filter
                 "logs": [],
                 "total_count": 0,
                 "limit": limit,
@@ -188,7 +186,7 @@ class DatabaseService:
         start_date: datetime,
         end_date: datetime,
         user_id: Optional[int] = None,
-        action: Optional[str] = None
+        category: Optional[str] = None  # Changed from action to category
     ) -> Dict[str, Any]:
         """
         Get audit logs within a specific date range
@@ -198,7 +196,7 @@ class DatabaseService:
             start_date: Start date for the range
             end_date: End date for the range
             user_id: Optional filter for specific user
-            action: Optional filter for specific action
+            category: Optional filter for specific category
             
         Returns:
             Dictionary containing audit logs in the date range
@@ -211,8 +209,8 @@ class DatabaseService:
             if user_id:
                 query = query.filter(AuditLog.user_id == user_id)
             
-            if action:
-                query = query.filter(AuditLog.action == action)
+            if category:
+                query = query.filter(AuditLog.category == category)  # Changed from action to category
             
             logs = query.order_by(desc(AuditLog.created_at)).all()
             
@@ -232,7 +230,7 @@ class DatabaseService:
                 "start_date": start_date.isoformat(),
                 "end_date": end_date.isoformat(),
                 "user_id_filter": user_id,
-                "action_filter": action,
+                "category_filter": category,  # Changed from action_filter to category_filter
                 "logs": log_list,
                 "total_count": len(log_list)
             }
@@ -243,7 +241,7 @@ class DatabaseService:
                 "start_date": start_date.isoformat(),
                 "end_date": end_date.isoformat(),
                 "user_id_filter": user_id,
-                "action_filter": action,
+                "category_filter": category,  # Changed from action_filter to category_filter
                 "logs": [],
                 "total_count": 0,
                 "error": str(e)

@@ -42,7 +42,8 @@ async def signup(user: UserCreate, request: Request, db: Session = Depends(get_d
             user_id=None,
             category="authentication",
             action_details=f"Signup attempt failed for email {user.email} - not in allowed list",
-            risk_level="medium",
+            resource_type="allowed_emails",
+            resource_id=allowed_email.id,
             request=request
         )
         raise HTTPException(
@@ -58,7 +59,8 @@ async def signup(user: UserCreate, request: Request, db: Session = Depends(get_d
             user_id=None,
             category="authentication",
             action_details=f"Signup attempt failed for email {user.email} - already registered",
-            risk_level="medium",
+            resource_type="allowed_emails",
+            resource_id=allowed_email.id,
             request=request
         )
         raise HTTPException(
@@ -75,7 +77,8 @@ async def signup(user: UserCreate, request: Request, db: Session = Depends(get_d
             user_id=None,
             category="authentication",
             action_details=f"Signup attempt failed for email {user.email} - user already exists",
-            risk_level="medium",
+            resource_type="users",
+            resource_id=existing_user.id,
             request=request
         )
         raise HTTPException(
@@ -117,7 +120,8 @@ async def signup(user: UserCreate, request: Request, db: Session = Depends(get_d
             user_id=db_user.id,
             category="user_management",
             action_details=f"New user {user.email} successfully registered",
-            risk_level="low",
+            resource_type="users",
+            resource_id=db_user.id,
             request=request
         )
         
@@ -137,7 +141,8 @@ async def signup(user: UserCreate, request: Request, db: Session = Depends(get_d
             user_id=None,
             category="authentication",
             action_details=f"Signup attempt failed for email {user.email} - integrity error: {str(e)}",
-            risk_level="high",
+            resource_type="users",
+            resource_id=db_user.id,
             request=request
         )
         
@@ -155,7 +160,8 @@ async def signup(user: UserCreate, request: Request, db: Session = Depends(get_d
             user_id=None,
             category="authentication",
             action_details=f"Signup attempt failed for email {user.email} - unexpected error: {str(e)}",
-            risk_level="high",
+            resource_type="users",
+            resource_id=db_user.id,
             request=request
         )
         
@@ -180,7 +186,8 @@ async def login(
             user_id=None,
             category="authentication",
             action_details=f"Failed login attempt for email {credentials.email} - incorrect credentials",
-            risk_level="medium",
+            resource_type="users",
+            resource_id=user.id,
             request=request
         )
         
@@ -201,7 +208,8 @@ async def login(
         user_id=user.id,
         category="authentication",
         action_details=f"User {user.email} successfully logged in",
-        risk_level="low",
+        resource_type="users",
+        resource_id=user.id,
         request=request
     )
     
@@ -220,7 +228,8 @@ async def logout(
         user_id=current_user.id,
         category="authentication",
         action_details=f"User {current_user.email} logged out",
-        risk_level="low",
+        resource_type="users",
+        resource_id=current_user.id,
         request=request
     )
     
@@ -239,7 +248,8 @@ async def get_current_user_info(
         user_id=current_user.id,
         category="data_access",
         action_details=f"User {current_user.email} accessed their profile information",
-        risk_level="low",
+        resource_type="users",
+        resource_id=current_user.id,
         request=request
     )
     
@@ -279,7 +289,8 @@ async def update_user_info(
                 user_id=current_user.id,
                 category="user_management",
                 action_details=f"User {current_user.email} failed to update email to {user_update.email} - email already taken",
-                risk_level="medium",
+                resource_type="users",
+                resource_id=current_user.id,
                 request=request
             )
             
@@ -304,7 +315,8 @@ async def update_user_info(
                 user_id=current_user.id,
                 category="user_management",
                 action_details=f"User {current_user.email} updated fields: {', '.join(updated_fields)}",
-                risk_level="low",
+                resource_type="users",
+                resource_id=current_user.id,
                 request=request
             )
         
@@ -319,7 +331,6 @@ async def update_user_info(
             action="user_update_failed",
             category="user_management",
             action_details=f"User {current_user.email} failed to update profile - integrity error",
-            risk_level="high",
             request=request
         )
         
@@ -344,7 +355,8 @@ async def get_user_audit_logs(
         action="audit_logs_accessed",
         category="data_access",
         action_details=f"User {current_user.email} accessed their audit logs",
-        risk_level="low",
+        resource_type="users",
+        resource_id=current_user.id,
         request=request
     )
     

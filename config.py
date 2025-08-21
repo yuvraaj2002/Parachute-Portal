@@ -34,9 +34,9 @@ class Settings(BaseSettings):
     postgresql_db: str = ""
 
     # GHL settings
-    ghl_api_key: str
-    location_id: str
-    private_token: str
+    ghl_api_key: str = ""
+    location_id: str = ""
+    private_token: str = ""
 
     # AWS credentials
     aws_access_key_id: str = ""

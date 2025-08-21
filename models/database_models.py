@@ -486,16 +486,12 @@ class AuditLog(Base):
     
     # Core Action Details
     user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
+    category = Column(String(100), nullable=False)  
     action_details = Column(String(500), nullable=True)
-    category = Column(Enum(AuditLogCategory, name="audit_log_category_enum"), nullable=False) 
-    
-    # Resource Context
-    resource_type = Column(String(100), nullable=True)
-    resource_id = Column(Integer, nullable=True)
-    
-    # Security & Risk Assessment
-    risk_level = Column(Enum(RiskLevel, name="risk_level_enum"), default=RiskLevel.LOW)
-    suspicious_indicators = Column(JSON, nullable=True)  # Store flags like multiple failed logins
+
+    # Database record that gets affected or added
+    table_name = Column(String(100), nullable=False)
+    record_id = Column(Integer, nullable=True)
     
     # Location & Context
     ip_address = Column(String(45), nullable=True)
@@ -512,9 +508,9 @@ class AuditLog(Base):
         Index('idx_audit_logs_user_id', 'user_id'),
         Index('idx_audit_logs_category', 'category'),
         Index('idx_audit_logs_created_at', 'created_at'),
-        Index('idx_audit_logs_resource', 'resource_type', 'resource_id'),
+        Index('idx_audit_logs_table_name', 'table_name'),
+        Index('idx_audit_logs_record_id', 'record_id'),
         Index('idx_audit_logs_ip_address', 'ip_address'),
-        Index('idx_audit_logs_risk_level', 'risk_level'),
     )
 
 # Database dependency
