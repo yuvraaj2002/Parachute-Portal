@@ -5,6 +5,7 @@ from sqlalchemy import desc
 from datetime import datetime, date, UTC
 from fastapi import Request
 from models.database_models import AuditLog, User
+from sqlalchemy import or_
 
 logger = logging.getLogger(__name__)
 
@@ -244,5 +245,100 @@ class DatabaseService:
                 "category_filter": category,  # Changed from action_filter to category_filter
                 "logs": [],
                 "total_count": 0,
+                "error": str(e)
+            }
+
+    @staticmethod
+    def search_audit_logs(
+        db: Session,
+        search: Optional[str] = None,
+        category: Optional[str] = None,
+        limit: int = 20,
+        page: int = 1
+    ) -> Dict[str, Any]:
+        """
+        Search audit logs with text search and category filtering
+        
+        Args:
+            db: Database session
+            search: Optional text to search in action_details, ip_address, or user_agent
+            category: Optional filter for specific category
+            limit: Maximum number of logs per page
+            page: Page number (1-based)
+            
+        Returns:
+            Dictionary containing search results with pagination
+        """
+        try:
+            query = db.query(AuditLog)
+            
+            # Apply category filter if specified
+            if category:
+                query = query.filter(AuditLog.category == category)
+            
+            # Apply text search if specified
+            if search:
+                search_term = f"%{search}%"
+                query = query.filter(
+                    or_(
+                        AuditLog.action_details.ilike(search_term),
+                        AuditLog.ip_address.ilike(search_term),
+                        AuditLog.user_agent.ilike(search_term)
+                    )
+                )
+            
+            # Get total count for pagination
+            total_count = query.count()
+            
+            # Apply pagination
+            offset = (page - 1) * limit
+            logs = query.order_by(desc(AuditLog.created_at)).offset(offset).limit(limit).all()
+            
+            # Build response
+            log_list = []
+            for log in logs:
+                log_list.append({
+                    "id": log.id,
+                    "user_id": log.user_id,
+                    "category": log.category,
+                    "action_details": log.action_details,
+                    "ip_address": log.ip_address,
+                    "user_agent": log.user_agent,
+                    "created_at": log.created_at.isoformat()
+                })
+            
+            # Calculate pagination info
+            total_pages = (total_count + limit - 1) // limit
+            has_next = page < total_pages
+            has_prev = page > 1
+            
+            return {
+                "search_term": search,
+                "category_filter": category,
+                "logs": log_list,
+                "pagination": {
+                    "current_page": page,
+                    "total_pages": total_pages,
+                    "total_count": total_count,
+                    "limit": limit,
+                    "has_next": has_next,
+                    "has_prev": has_prev
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error searching audit logs: {e}")
+            return {
+                "search_term": search,
+                "category_filter": category,
+                "logs": [],
+                "pagination": {
+                    "current_page": page,
+                    "total_pages": 0,
+                    "total_count": 0,
+                    "limit": limit,
+                    "has_next": False,
+                    "has_prev": False
+                },
                 "error": str(e)
             }

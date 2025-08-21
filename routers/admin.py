@@ -62,3 +62,25 @@ async def get_audit_logs_by_date_range(
     )
     
     return DatabaseService.get_audit_logs_by_date_range(db, start_dt, end_dt, user_id, category)  # Changed from action to category
+
+@router.get("/audit-logs/search")
+async def search_audit_logs(
+    request: Request,
+    search: Optional[str] = None,
+    category: Optional[str] = None,
+    limit: int = 20,
+    page: int = 1,
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Search audit logs with text search and category filtering (admin only)"""
+    # Log admin search access
+    DatabaseService.create_audit_log(
+        db=db,
+        user_id=current_user.id,
+        category="system_admin",
+        action_details=f"Admin {current_user.email} searched audit logs with: search='{search}', category='{category}', limit={limit}, page={page}",
+        request=request
+    )
+    
+    return DatabaseService.search_audit_logs(db, search, category, limit, page)
