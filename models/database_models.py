@@ -77,6 +77,31 @@ class FormStatus(str, enum.Enum):
     COMPLETED = "completed"
     OVERDUE = "overdue"
 
+class RiskLevel(str, enum.Enum):
+    """Risk levels for audit log entries"""
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+class AuditLogCategory(str, enum.Enum):
+    """Categories for audit log entries"""
+    AUTHENTICATION = "authentication"
+    AUTHORIZATION = "authorization"
+    DATA_ACCESS = "data_access"
+    DATA_MODIFICATION = "data_modification"
+    DATA_DELETION = "data_deletion"
+    SYSTEM_ADMIN = "system_admin"
+    SECURITY_EVENT = "security_event"
+    COMPLIANCE = "compliance"
+    USER_MANAGEMENT = "user_management"
+    PATIENT_DATA = "patient_data"
+    BILLING = "billing"
+    FULFILLMENT = "fulfillment"
+    COMMUNICATION = "communication"
+    FILE_OPERATIONS = "file_operations"
+    EXPORT_IMPORT = "export_import"
+
 class User(Base):
     """User table for authentication"""
     __tablename__ = "users"
@@ -150,11 +175,11 @@ class PatientTicket(Base):
     
     # Status & Flags
     qualified_flag = Column(Boolean, default=False)
-    ticket_status = Column(Enum(TicketStatus), default=TicketStatus.READY_FOR_REVIEW)
+    ticket_status = Column(Enum(TicketStatus, name="ticket_status_enum"), default=TicketStatus.READY_FOR_REVIEW)
     pa_required = Column(Boolean, default=False)
-    pa_status = Column(Enum(PAStatus), default=PAStatus.NOT_REQUIRED)
-    billing_status = Column(Enum(BillingStatus), default=BillingStatus.NOT_READY)
-    fulfillment_status = Column(Enum(FulfillmentStatus), default=FulfillmentStatus.NOT_READY)
+    pa_status = Column(Enum(PAStatus, name="pa_status_enum"), default=PAStatus.NOT_REQUIRED)
+    billing_status = Column(Enum(BillingStatus, name="billing_status_enum"), default=BillingStatus.NOT_READY)
+    fulfillment_status = Column(Enum(FulfillmentStatus, name="fulfillment_status_enum"), default=FulfillmentStatus.NOT_READY)
     
     # Staff Assignment
     assigned_staff_id = Column(Integer, ForeignKey('users.id'), nullable=True)
@@ -187,7 +212,7 @@ class PARequest(Base):
     request_date = Column(DateTime, nullable=False)
     submission_date = Column(DateTime, nullable=True)
     response_date = Column(DateTime, nullable=True)
-    status = Column(Enum(PAStatus), nullable=False)
+    status = Column(Enum(PAStatus, name="pa_status_enum"), nullable=False)
     
     # Files
     request_file_url = Column(String(500), nullable=True)
@@ -252,7 +277,7 @@ class BillingEntry(Base):
     submission_date = Column(DateTime, nullable=False)
     amount_billed = Column(Float, nullable=False)
     claim_id = Column(String(100), nullable=True)
-    status = Column(Enum(BillingStatus), nullable=False)
+    status = Column(Enum(BillingStatus, name="billing_status_enum"), nullable=False)
     
     # Resubmission Info
     resubmission_count = Column(Integer, default=0)
@@ -292,7 +317,7 @@ class FulfillmentRecord(Base):
     carrier = Column(String(50), nullable=True)
     
     # Status
-    status = Column(Enum(FulfillmentStatus), nullable=False)
+    status = Column(Enum(FulfillmentStatus, name="fulfillment_status_enum"), nullable=False)
     
     # Notes
     notes = Column(Text, nullable=True)
@@ -317,7 +342,7 @@ class PatientForm(Base):
     form_url = Column(String(500), nullable=False)
     
     # Status
-    status = Column(Enum(FormStatus), default=FormStatus.PENDING)
+    status = Column(Enum(FormStatus, name="form_status_enum"), default=FormStatus.PENDING)
     sent_date = Column(DateTime, nullable=True)
     completed_date = Column(DateTime, nullable=True)
     due_date = Column(DateTime, nullable=True)
@@ -454,17 +479,25 @@ class PatientCommunication(Base):
     patient_ticket = relationship("PatientTicket", back_populates="communications")
 
 class AuditLog(Base):
-    """Audit trail for HIPAA compliance"""
+    """Enhanced audit trail for HIPAA compliance and security monitoring"""
     __tablename__ = "audit_logs"
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     
-    # Action Details
+    # Core Action Details
     user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
-    action = Column(String(100), nullable=False)
     action_details = Column(String(500), nullable=True)
+    category = Column(Enum(AuditLogCategory, name="audit_log_category_enum"), nullable=False) 
     
-    # Geo location and user agent
+    # Resource Context
+    resource_type = Column(String(100), nullable=True)
+    resource_id = Column(Integer, nullable=True)
+    
+    # Security & Risk Assessment
+    risk_level = Column(Enum(RiskLevel, name="risk_level_enum"), default=RiskLevel.LOW)
+    suspicious_indicators = Column(JSON, nullable=True)  # Store flags like multiple failed logins
+    
+    # Location & Context
     ip_address = Column(String(45), nullable=True)
     user_agent = Column(String(500), nullable=True)
     
@@ -473,6 +506,16 @@ class AuditLog(Base):
     
     # Relationships
     user = relationship("User", back_populates="audit_logs")
+    
+    # Performance Indexes
+    __table_args__ = (
+        Index('idx_audit_logs_user_id', 'user_id'),
+        Index('idx_audit_logs_category', 'category'),
+        Index('idx_audit_logs_created_at', 'created_at'),
+        Index('idx_audit_logs_resource', 'resource_type', 'resource_id'),
+        Index('idx_audit_logs_ip_address', 'ip_address'),
+        Index('idx_audit_logs_risk_level', 'risk_level'),
+    )
 
 # Database dependency
 def get_db():

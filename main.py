@@ -16,7 +16,8 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers.auth import router as api_router
+from routers.auth import router as auth_router
+from routers.admin import router as admin_router
 
 app = FastAPI(
     title="Parachute Portal API",
@@ -42,7 +43,8 @@ async def health_check():
     return {"status": "healthy"}
 
 # Include routers
-app.include_router(api_router)
+app.include_router(auth_router)
+app.include_router(admin_router)
 
 if __name__ == "__main__":
     import uvicorn
