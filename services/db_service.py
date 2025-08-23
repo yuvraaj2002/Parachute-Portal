@@ -75,217 +75,24 @@ class DatabaseService:
             return None
     
     @staticmethod
-    def get_user_audit_logs(
+    def get_all_audit_logs(
         db: Session,
-        user_id: int,
-        limit: int = 100
-    ) -> Dict[str, Any]:
-        """
-        Get audit logs for a specific user
-        
-        Args:
-            db: Database session
-            user_id: ID of the user
-            limit: Maximum number of logs to return
-            
-        Returns:
-            Dictionary containing user's audit logs
-        """
-        try:
-            logs = db.query(AuditLog)\
-                .filter(AuditLog.user_id == user_id)\
-                .order_by(desc(AuditLog.created_at))\
-                .limit(limit)\
-                .all()
-            
-            log_list = []
-            for log in logs:
-                log_list.append({
-                    "id": log.id,
-                    "user_id": log.user_id,
-                    "category": log.category,  # Fixed to use category field
-                    "action_details": log.action_details,
-                    "ip_address": log.ip_address,
-                    "user_agent": log.user_agent,
-                    "created_at": log.created_at.isoformat()
-                })
-            
-            return {
-                "user_id": user_id,
-                "logs": log_list,
-                "total_count": len(log_list),
-                "limit": limit
-            }
-            
-        except Exception as e:
-            logger.error(f"Error retrieving audit logs for user {user_id}: {e}")
-            return {
-                "user_id": user_id,
-                "logs": [],
-                "total_count": 0,
-                "limit": limit,
-                "error": str(e)
-            }
-    
-    @staticmethod
-    def get_system_audit_logs(
-        db: Session,
-        category: Optional[str] = None,  # Changed from action to category
-        limit: int = 100
-    ) -> Dict[str, Any]:
-        """
-        Get system-wide audit logs with optional category filtering
-        
-        Args:
-            db: Database session
-            category: Optional filter for specific category type
-            limit: Maximum number of logs to return
-            
-        Returns:
-            Dictionary containing system audit logs
-        """
-        try:
-            query = db.query(AuditLog)
-            
-            if category:
-                query = query.filter(AuditLog.category == category)  
-            
-            logs = query.order_by(desc(AuditLog.created_at)).limit(limit).all()
-            
-            log_list = []
-            for log in logs:
-                log_list.append({
-                    "id": log.id,
-                    "user_id": log.user_id,
-                    "category": log.category,  # Changed from action to category
-                    "action_details": log.action_details,
-                    "ip_address": log.ip_address,
-                    "user_agent": log.user_agent,
-                    "created_at": log.created_at.isoformat()
-                })
-            
-            return {
-                "category_filter": category,  # Changed from action_filter to category_filter
-                "logs": log_list,
-                "total_count": len(log_list),
-                "limit": limit
-            }
-            
-        except Exception as e:
-            logger.error(f"Error retrieving system audit logs: {e}")
-            return {
-                "category_filter": category,  # Changed from action_filter to category_filter
-                "logs": [],
-                "total_count": 0,
-                "limit": limit,
-                "error": str(e)
-            }
-    
-    @staticmethod
-    def get_audit_logs_by_date_range(
-        db: Session,
-        start_date: datetime,
-        end_date: datetime,
-        user_id: Optional[int] = None,
-        category: Optional[str] = None  # Changed from action to category
-    ) -> Dict[str, Any]:
-        """
-        Get audit logs within a specific date range
-        
-        Args:
-            db: Database session
-            start_date: Start date for the range
-            end_date: End date for the range
-            user_id: Optional filter for specific user
-            category: Optional filter for specific category
-            
-        Returns:
-            Dictionary containing audit logs in the date range
-        """
-        try:
-            query = db.query(AuditLog)\
-                .filter(AuditLog.created_at >= start_date)\
-                .filter(AuditLog.created_at <= end_date)
-            
-            if user_id:
-                query = query.filter(AuditLog.user_id == user_id)
-            
-            if category:
-                query = query.filter(AuditLog.category == category)  # Changed from action to category
-            
-            logs = query.order_by(desc(AuditLog.created_at)).all()
-            
-            log_list = []
-            for log in logs:
-                log_list.append({
-                    "id": log.id,
-                    "user_id": log.user_id,
-                    "category": log.category,
-                    "action_details": log.action_details,
-                    "ip_address": log.ip_address,
-                    "user_agent": log.user_agent,
-                    "created_at": log.created_at.isoformat()
-                })
-            
-            return {
-                "start_date": start_date.isoformat(),
-                "end_date": end_date.isoformat(),
-                "user_id_filter": user_id,
-                "category_filter": category,  # Changed from action_filter to category_filter
-                "logs": log_list,
-                "total_count": len(log_list)
-            }
-            
-        except Exception as e:
-            logger.error(f"Error retrieving audit logs by date range: {e}")
-            return {
-                "start_date": start_date.isoformat(),
-                "end_date": end_date.isoformat(),
-                "user_id_filter": user_id,
-                "category_filter": category,  # Changed from action_filter to category_filter
-                "logs": [],
-                "total_count": 0,
-                "error": str(e)
-            }
-
-    @staticmethod
-    def search_audit_logs(
-        db: Session,
-        search: Optional[str] = None,
-        category: Optional[str] = None,
-        limit: int = 20,
+        limit: int = 100,
         page: int = 1
     ) -> Dict[str, Any]:
         """
-        Search audit logs with text search and category filtering
+        Get all audit logs with pagination
         
         Args:
             db: Database session
-            search: Optional text to search in action_details, ip_address, or user_agent
-            category: Optional filter for specific category
             limit: Maximum number of logs per page
             page: Page number (1-based)
             
         Returns:
-            Dictionary containing search results with pagination
+            Dictionary containing all audit logs with pagination
         """
         try:
             query = db.query(AuditLog)
-            
-            # Apply category filter if specified
-            if category:
-                query = query.filter(AuditLog.category == category)
-            
-            # Apply text search if specified
-            if search:
-                search_term = f"%{search}%"
-                query = query.filter(
-                    or_(
-                        AuditLog.action_details.ilike(search_term),
-                        AuditLog.ip_address.ilike(search_term),
-                        AuditLog.user_agent.ilike(search_term)
-                    )
-                )
             
             # Get total count for pagination
             total_count = query.count()
@@ -297,9 +104,16 @@ class DatabaseService:
             # Build response
             log_list = []
             for log in logs:
+                # Get user first name if user_id exists
+                user_name = None
+                if log.user_id:
+                    user = db.query(User).filter(User.id == log.user_id).first()
+                    if user:
+                        user_name = user.first_name
+                
                 log_list.append({
                     "id": log.id,
-                    "user_id": log.user_id,
+                    "user": user_name,
                     "category": log.category,
                     "action_details": log.action_details,
                     "ip_address": log.ip_address,
@@ -313,7 +127,87 @@ class DatabaseService:
             has_prev = page > 1
             
             return {
-                "search_term": search,
+                "logs": log_list,
+                "pagination": {
+                    "current_page": page,
+                    "total_pages": total_pages,
+                    "total_count": total_count,
+                    "limit": limit,
+                    "has_next": has_next,
+                    "has_prev": has_prev
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error retrieving all audit logs: {e}")
+            return {
+                "logs": [],
+                "pagination": {
+                    "current_page": page,
+                    "total_pages": 0,
+                    "total_count": 0,
+                    "limit": limit,
+                    "has_next": False,
+                    "has_prev": False
+                },
+                "error": str(e)
+            }
+
+    @staticmethod
+    def get_audit_logs_by_type(
+        db: Session,
+        category: str,
+        limit: int = 100,
+        page: int = 1
+    ) -> Dict[str, Any]:
+        """
+        Get audit logs filtered by type/category with pagination
+        
+        Args:
+            db: Database session
+            category: Category/type to filter by
+            limit: Maximum number of logs per page
+            page: Page number (1-based)
+            
+        Returns:
+            Dictionary containing filtered audit logs with pagination
+        """
+        try:
+            query = db.query(AuditLog).filter(AuditLog.category == category)
+            
+            # Get total count for pagination
+            total_count = query.count()
+            
+            # Apply pagination
+            offset = (page - 1) * limit
+            logs = query.order_by(desc(AuditLog.created_at)).offset(offset).limit(limit).all()
+            
+            # Build response
+            log_list = []
+            for log in logs:
+                # Get user first name if user_id exists
+                user_name = None
+                if log.user_id:
+                    user = db.query(User).filter(User.id == log.user_id).first()
+                    if user:
+                        user_name = user.first_name
+                
+                log_list.append({
+                    "id": log.id,
+                    "user": user_name,
+                    "category": log.category,
+                    "action_details": log.action_details,
+                    "ip_address": log.ip_address,
+                    "user_agent": log.user_agent,
+                    "created_at": log.created_at.isoformat()
+                })
+            
+            # Calculate pagination info
+            total_pages = (total_count + limit - 1) // limit
+            has_next = page < total_pages
+            has_prev = page > 1
+            
+            return {
                 "category_filter": category,
                 "logs": log_list,
                 "pagination": {
@@ -327,10 +221,211 @@ class DatabaseService:
             }
             
         except Exception as e:
-            logger.error(f"Error searching audit logs: {e}")
+            logger.error(f"Error retrieving audit logs by type {category}: {e}")
             return {
-                "search_term": search,
                 "category_filter": category,
+                "logs": [],
+                "pagination": {
+                    "current_page": page,
+                    "total_pages": 0,
+                    "total_count": 0,
+                    "limit": limit,
+                    "has_next": False,
+                    "has_prev": False
+                },
+                "error": str(e)
+            }
+
+    @staticmethod
+    def get_audit_logs_by_user(
+        db: Session,
+        user_id: int,
+        limit: int = 100,
+        page: int = 1
+    ) -> Dict[str, Any]:
+        """
+        Get audit logs filtered by specific user with pagination
+        
+        Args:
+            db: Database session
+            user_id: ID of the user to filter by
+            limit: Maximum number of logs per page
+            page: Page number (1-based)
+            
+        Returns:
+            Dictionary containing filtered audit logs with pagination
+        """
+        try:
+            query = db.query(AuditLog).filter(AuditLog.user_id == user_id)
+            
+            # Get total count for pagination
+            total_count = query.count()
+            
+            # Apply pagination
+            offset = (page - 1) * limit
+            logs = query.order_by(desc(AuditLog.created_at)).offset(offset).limit(limit).all()
+            
+            # Get user information
+            user = db.query(User).filter(User.id == user_id).first()
+            user_info = None
+            if user:
+                user_info = {
+                    "id": user.id,
+                    "email": user.email,
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "username": user.username
+                }
+            
+            # Build response
+            log_list = []
+            for log in logs:
+                log_list.append({
+                    "id": log.id,
+                    "user": user_info,
+                    "category": log.category,
+                    "action_details": log.action_details,
+                    "ip_address": log.ip_address,
+                    "user_agent": log.user_agent,
+                    "created_at": log.created_at.isoformat()
+                })
+            
+            # Calculate pagination info
+            total_pages = (total_count + limit - 1) // limit
+            has_next = page < total_pages
+            has_prev = page > 1
+            
+            return {
+                "user_filter": user_info,
+                "logs": log_list,
+                "pagination": {
+                    "current_page": page,
+                    "total_pages": total_pages,
+                    "total_count": total_count,
+                    "limit": limit,
+                    "has_next": has_next,
+                    "has_prev": has_prev
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error retrieving audit logs for user {user_id}: {e}")
+            return {
+                "user_filter": None,
+                "logs": [],
+                "pagination": {
+                    "current_page": page,
+                    "total_pages": 0,
+                    "total_count": 0,
+                    "limit": limit,
+                    "has_next": False,
+                    "has_prev": False
+                },
+                "error": str(e)
+            }
+
+    @staticmethod
+    def get_audit_logs_combined_filter(
+        db: Session,
+        category: Optional[str] = None,
+        user_id: Optional[int] = None,
+        limit: int = 100,
+        page: int = 1
+    ) -> Dict[str, Any]:
+        """
+        Get audit logs with combined filtering (type + user) and pagination
+        
+        Args:
+            db: Database session
+            category: Optional category/type filter
+            user_id: Optional user ID filter
+            limit: Maximum number of logs per page
+            page: Page number (1-based)
+            
+        Returns:
+            Dictionary containing filtered audit logs with pagination
+        """
+        try:
+            query = db.query(AuditLog)
+            
+            # Apply category filter if specified
+            if category:
+                query = query.filter(AuditLog.category == category)
+            
+            # Apply user filter if specified
+            if user_id:
+                query = query.filter(AuditLog.user_id == user_id)
+            
+            # Get total count for pagination
+            total_count = query.count()
+            
+            # Apply pagination
+            offset = (page - 1) * limit
+            logs = query.order_by(desc(AuditLog.created_at)).offset(offset).limit(limit).all()
+            
+            # Get user information if user_id filter is applied
+            user_info = None
+            if user_id:
+                user = db.query(User).filter(User.id == user_id).first()
+                if user:
+                    user_info = {
+                        "id": user.id,
+                        "email": user.email,
+                        "first_name": user.first_name,
+                        "last_name": user.last_name,
+                        "username": user.username
+                    }
+            
+            # Build response
+            log_list = []
+            for log in logs:
+                # Get user first name for each log entry
+                log_user_name = None
+                if log.user_id:
+                    user = db.query(User).filter(User.id == log.user_id).first()
+                    if user:
+                        log_user_name = user.first_name
+                
+                log_list.append({
+                    "id": log.id,
+                    "user": log_user_name,
+                    "category": log.category,
+                    "action_details": log.action_details,
+                    "ip_address": log.ip_address,
+                    "user_agent": log.user_agent,
+                    "created_at": log.created_at.isoformat()
+                })
+            
+            # Calculate pagination info
+            total_pages = (total_count + limit - 1) // limit
+            has_next = page < total_pages
+            has_prev = page > 1
+            
+            return {
+                "filters": {
+                    "category": category,
+                    "user_id": user_id,
+                    "user_info": user_info
+                },
+                "logs": log_list,
+                "pagination": {
+                    "current_page": page,
+                    "total_pages": total_pages,
+                    "total_count": total_count,
+                    "limit": limit,
+                    "has_next": has_next,
+                    "has_prev": has_prev
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error retrieving audit logs with combined filters: {e}")
+            return {
+                "filters": {
+                    "category": category,
+                    "user_id": user_id,
+                    "user_info": None
+                },
                 "logs": [],
                 "pagination": {
                     "current_page": page,

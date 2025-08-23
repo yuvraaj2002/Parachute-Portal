@@ -438,6 +438,149 @@ curl http://localhost:8000/health
 ### API Documentation
 Visit `http://localhost:8000/docs` for interactive API testing.
 
+## 🔍 Audit Logging
+
+The Parachute Portal API includes comprehensive audit logging for HIPAA compliance and security monitoring. All user actions are automatically logged with detailed information including user identity, IP address, user agent, and action details.
+
+### Audit Log Structure
+
+Each audit log entry contains:
+- **User Information**: User ID and first name
+- **Action Category**: Type of action performed
+- **Action Details**: Detailed description of the action
+- **Resource Context**: Table name and record ID affected
+- **Security Information**: IP address and user agent
+- **Timestamp**: When the action occurred
+
+### Available Action Categories
+
+- `authentication` - Login/logout attempts
+- `user_management` - User creation, updates, deletion
+- `data_access` - Profile access, data viewing
+- `system_admin` - Admin actions
+- `security_event` - Security-related events
+- `compliance` - Compliance-related actions
+
+### Admin Audit Endpoints
+
+#### 1. Get All Audit Logs (Paginated)
+```http
+GET /admin/audit-logs
+Authorization: Bearer {admin_token}
+```
+
+**Query Parameters:**
+- `limit` (optional): Number of logs per page (default: 100)
+- `page` (optional): Page number (default: 1)
+
+**Response:**
+```json
+{
+    "logs": [
+        {
+            "id": 1,
+            "user": "John",
+            "category": "authentication",
+            "action_details": "User john@company.com successfully logged in",
+            "ip_address": "127.0.0.1",
+            "user_agent": "PostmanRuntime/7.45.0",
+            "created_at": "2025-08-21T19:30:55.256000"
+        }
+    ],
+    "pagination": {
+        "current_page": 1,
+        "total_pages": 5,
+        "total_count": 450,
+        "limit": 100,
+        "has_next": true,
+        "has_prev": false
+    }
+}
+```
+
+#### 2. Filter Audit Logs by Type
+```http
+GET /admin/audit-logs/type/{category}
+Authorization: Bearer {admin_token}
+```
+
+**Path Parameters:**
+- `category`: Action category to filter by
+
+**Query Parameters:**
+- `limit` (optional): Number of logs per page (default: 100)
+- `page` (optional): Page number (default: 1)
+
+**Example:**
+```http
+GET /admin/audit-logs/type/authentication?limit=50&page=2
+```
+
+#### 3. Filter Audit Logs by User
+```http
+GET /admin/audit-logs/user/{user_id}
+Authorization: Bearer {admin_token}
+```
+
+**Path Parameters:**
+- `user_id`: ID of the user to filter by
+
+**Query Parameters:**
+- `limit` (optional): Number of logs per page (default: 100)
+- `page` (optional): Page number (default: 1)
+
+**Example:**
+```http
+GET /admin/audit-logs/user/1?limit=25
+```
+
+#### 4. Combined Filter (Type + User)
+```http
+GET /admin/audit-logs/filter
+Authorization: Bearer {admin_token}
+```
+
+**Query Parameters:**
+- `category` (optional): Action category to filter by
+- `user_id` (optional): User ID to filter by
+- `limit` (optional): Number of logs per page (default: 100)
+- `page` (optional): Page number (default: 1)
+
+**Example:**
+```http
+GET /admin/audit-logs/filter?category=authentication&user_id=1&limit=50&page=1
+```
+
+### Audit Log Creation
+
+Audit logs are automatically created for:
+- User authentication (login/logout)
+- User management operations
+- Data access and modifications
+- Admin actions
+- Security events
+
+**Example Audit Log Creation:**
+```python
+DatabaseService.create_audit_log(
+    db=db,
+    user_id=user.id,
+    category="authentication",
+    action_details="User successfully logged in",
+    resource_type="users",
+    resource_id=user.id,
+    request=request
+)
+```
+
+### Security Features
+
+- **IP Address Tracking**: Records client IP addresses
+- **User Agent Logging**: Tracks browser/client information
+- **Resource Context**: Links actions to specific database records
+- **Admin Access Control**: Only admin users can access audit logs
+- **Comprehensive Coverage**: All user actions are logged
+
 ## 🚀 Future Features
 
 - [ ] Password reset functionality
@@ -445,7 +588,6 @@ Visit `http://localhost:8000/docs` for interactive API testing.
 - [ ] Two-factor authentication
 - [ ] Session management
 - [ ] Rate limiting
-- [ ] Audit logging
 
 ## 📞 Support
 

@@ -13,74 +13,85 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["Administration"])
 
 @router.get("/audit-logs")
-async def get_system_audit_logs(
+async def get_all_audit_logs(
     request: Request,
-    category: Optional[str] = None,  
     limit: int = 100,
+    page: int = 1,
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
-    """Get system-wide audit logs (admin only)"""
+    """Get all audit logs with pagination (admin only)"""
     # Log admin audit log access
     DatabaseService.create_audit_log(
         db=db,
         user_id=current_user.id,
         category="system_admin",
-        action_details=f"Admin {current_user.email} accessed system audit logs with filters: category={category}, limit={limit}",
+        action_details=f"Admin {current_user.email} accessed all audit logs with pagination: limit={limit}, page={page}",
         request=request
     )
     
-    return DatabaseService.get_system_audit_logs(db, category, limit)  
+    return DatabaseService.get_all_audit_logs(db, limit, page)
 
-@router.get("/audit-logs/date-range")
-async def get_audit_logs_by_date_range(
+@router.get("/audit-logs/type/{category}")
+async def get_audit_logs_by_type(
+    category: str,
     request: Request,
-    start_date: str,
-    end_date: str,
-    user_id: Optional[int] = None,
-    category: Optional[str] = None,  
-    current_user: User = Depends(get_current_admin_user),
-    db: Session = Depends(get_db)
-):
-    """Get audit logs within a specific date range (admin only)"""
-    try:
-        start_dt = datetime.fromisoformat(start_date)
-        end_dt = datetime.fromisoformat(end_date)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid date format. Use ISO format (YYYY-MM-DDTHH:MM:SS)"
-        )
-    
-    # Log admin date range audit log access
-    DatabaseService.create_audit_log(
-        db=db,
-        user_id=current_user.id,
-        category="system_admin",
-        action_details=f"Admin {current_user.email} accessed audit logs for date range {start_date} to {end_date}",
-        request=request
-    )
-    
-    return DatabaseService.get_audit_logs_by_date_range(db, start_dt, end_dt, user_id, category)  # Changed from action to category
-
-@router.get("/audit-logs/search")
-async def search_audit_logs(
-    request: Request,
-    search: Optional[str] = None,
-    category: Optional[str] = None,
-    limit: int = 20,
+    limit: int = 100,
     page: int = 1,
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
-    """Search audit logs with text search and category filtering (admin only)"""
-    # Log admin search access
+    """Get audit logs filtered by type/category (admin only)"""
+    # Log admin audit log access by type
     DatabaseService.create_audit_log(
         db=db,
         user_id=current_user.id,
         category="system_admin",
-        action_details=f"Admin {current_user.email} searched audit logs with: search='{search}', category='{category}', limit={limit}, page={page}",
+        action_details=f"Admin {current_user.email} accessed audit logs by type '{category}' with pagination: limit={limit}, page={page}",
         request=request
     )
     
-    return DatabaseService.search_audit_logs(db, search, category, limit, page)
+    return DatabaseService.get_audit_logs_by_type(db, category, limit, page)
+
+@router.get("/audit-logs/user/{user_id}")
+async def get_audit_logs_by_user(
+    user_id: int,
+    request: Request,
+    limit: int = 100,
+    page: int = 1,
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Get audit logs filtered by specific user (admin only)"""
+    # Log admin audit log access by user
+    DatabaseService.create_audit_log(
+        db=db,
+        user_id=current_user.id,
+        category="system_admin",
+        action_details=f"Admin {current_user.email} accessed audit logs for user ID {user_id} with pagination: limit={limit}, page={page}",
+        request=request
+    )
+    
+    return DatabaseService.get_audit_logs_by_user(db, user_id, limit, page)
+
+@router.get("/audit-logs/filter")
+async def get_audit_logs_combined_filter(
+    request: Request,
+    category: Optional[str] = None,
+    user_id: Optional[int] = None,
+    limit: int = 100,
+    page: int = 1,
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Get audit logs with combined filtering (type + user) and pagination (admin only)"""
+    # Log admin combined filter access
+    DatabaseService.create_audit_log(
+        db=db,
+        user_id=current_user.id,
+        category="system_admin",
+        action_details=f"Admin {current_user.email} accessed audit logs with combined filters: category='{category}', user_id={user_id}, limit={limit}, page={page}",
+        request=request
+    )
+    
+    return DatabaseService.get_audit_logs_combined_filter(db, category, user_id, limit, page)
