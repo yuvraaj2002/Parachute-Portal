@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     redis_health_check_interval: int = 30
     redis_retry_on_timeout: bool = True
     
+    # Celery settings
+    celery_broker_url: str = "redis://localhost:6379/0"
+    celery_result_backend: str = "redis://localhost:6379/0"
+    
     class Config:
         env_file = ".env"
         case_sensitive = False

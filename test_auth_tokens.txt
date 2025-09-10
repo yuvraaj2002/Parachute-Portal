@@ -1,0 +1,35 @@
+=== TEST AUTH TOKENS ===
+Generated at: 2025-09-10T07:35:08.580556+00:00
+==================================================
+
+User: John Doe (testuser1@company.com)
+Role: Staff
+User ID: 1
+Username: johndoe
+Password: testpass123
+Short Token (30min): eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0dXNlcjFAY29tcGFueS5jb20iLCJ1c2VyX2lkIjoxLCJpc19hZG1pbiI6ZmFsc2UsInVzZXJuYW1lIjoiam9obmRvZSIsImV4cCI6MTc1NzQ5MTUwOH0.-Nh1TVOciW1FqOeAMzgrwJuO8MAEalkbl5rbrKqJyjo
+Long Token (24h): eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0dXNlcjFAY29tcGFueS5jb20iLCJ1c2VyX2lkIjoxLCJpc19hZG1pbiI6ZmFsc2UsInVzZXJuYW1lIjoiam9obmRvZSIsImV4cCI6MTc1NzU3NjEwOH0.8pS4FYFQvvErEehKMDcMAdRJpHZTS42oi3C6q73qJ98
+--------------------------------------------------
+
+User: Test User2 (testuser2@company.com)
+Role: Staff
+User ID: 3
+Username: testuser2
+Password: testpass123
+Short Token (30min): eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0dXNlcjJAY29tcGFueS5jb20iLCJ1c2VyX2lkIjozLCJpc19hZG1pbiI6ZmFsc2UsInVzZXJuYW1lIjoidGVzdHVzZXIyIiwiZXhwIjoxNzU3NDkxNTA4fQ.hcDFXOZq6SeYmix125Y_fvA5cmqkJ-sKHwlCrF6RWvM
+Long Token (24h): eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0dXNlcjJAY29tcGFueS5jb20iLCJ1c2VyX2lkIjozLCJpc19hZG1pbiI6ZmFsc2UsInVzZXJuYW1lIjoidGVzdHVzZXIyIiwiZXhwIjoxNzU3NTc2MTA4fQ.odDyVRDw0NyrOm1B1sr2cFZnzLcMrohWvzhDVeMLBVA
+--------------------------------------------------
+
+User: Yuvraj Singhs (admin@company.com)
+Role: Admin
+User ID: 2
+Username: yuvrajsingh
+Password: adminpass123
+Short Token (30min): eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbkBjb21wYW55LmNvbSIsInVzZXJfaWQiOjIsImlzX2FkbWluIjp0cnVlLCJ1c2VybmFtZSI6Inl1dnJhanNpbmdoIiwiZXhwIjoxNzU3NDkxNTA4fQ._5sMs3LQlIaMwHovFe9CAt3ejjFTcgfGNoAOmXoLuQY
+Long Token (24h): eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbkBjb21wYW55LmNvbSIsInVzZXJfaWQiOjIsImlzX2FkbWluIjp0cnVlLCJ1c2VybmFtZSI6Inl1dnJhanNpbmdoIiwiZXhwIjoxNzU3NTc2MTA4fQ.Za0vplVGVFu70kdC5qzmiacN-Ti2boO0yjRzZ0NzMcI
+--------------------------------------------------
+
+
+=== USAGE EXAMPLES ===
+curl -H "Authorization: Bearer YOUR_TOKEN_HERE" http://localhost:8000/agent/documents
+curl -H "Authorization: Bearer YOUR_TOKEN_HERE" http://localhost:8000/agent/analyze-document -F "file=@test.pdf"

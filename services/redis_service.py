@@ -133,4 +133,65 @@ class RedisService:
         """Get the conversation context for a chat"""
         return self.get_key(key) or ""
     
+    def set_task_status(self, task_id: str, status_data: dict, expire_seconds: int = 3600) -> bool:
+        """Set task status in Redis with JSON data"""
+        if not self.is_connected():
+            logger.warning("Redis not connected, cannot set task status")
+            return False
+        
+        try:
+            import json
+            status_key = f"task_status:{task_id}"
+            status_json = json.dumps(status_data)
+            self.redis_client.setex(status_key, expire_seconds, status_json)
+            return True
+        except Exception as e:
+            logger.error(f"Error setting task status in Redis: {e}")
+            return False
+    
+    def get_task_status(self, task_id: str) -> Optional[dict]:
+        """Get task status from Redis"""
+        if not self.is_connected():
+            logger.warning("Redis not connected, cannot get task status")
+            return None
+        
+        try:
+            import json
+            status_key = f"task_status:{task_id}"
+            status_json = self.redis_client.get(status_key)
+            if status_json:
+                return json.loads(status_json)
+            return None
+        except Exception as e:
+            logger.error(f"Error getting task status from Redis: {e}")
+            return None
+    
+    def update_task_progress(self, task_id: str, stage: str, progress: int, message: str = "", data: dict = None) -> bool:
+        """Update task progress in Redis"""
+        status_data = {
+            "task_id": task_id,
+            "stage": stage,
+            "progress": progress,
+            "message": message,
+            "timestamp": __import__('datetime').datetime.now(__import__('datetime').UTC).isoformat()
+        }
+        
+        if data:
+            status_data.update(data)
+        
+        return self.set_task_status(task_id, status_data)
+    
+    def delete_task_status(self, task_id: str) -> bool:
+        """Delete task status from Redis"""
+        if not self.is_connected():
+            logger.warning("Redis not connected, cannot delete task status")
+            return False
+        
+        try:
+            status_key = f"task_status:{task_id}"
+            return self.redis_client.delete(status_key) > 0
+        except Exception as e:
+            logger.error(f"Error deleting task status from Redis: {e}")
+            return False
+    
  
