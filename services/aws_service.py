@@ -29,20 +29,35 @@ class FileHandler:
         if getattr(settings, 'encryption_key', None):
             key = settings.encryption_key.strip()
             try:
-                Fernet(key.encode() if isinstance(key, str) else key)
-                return key.encode() if isinstance(key, str) else key
-            except Exception:
-                logger.error("Invalid encryption_key provided in settings. Falling back to local key file.")
+                # Validate the key format
+                if isinstance(key, str):
+                    key_bytes = key.encode()
+                else:
+                    key_bytes = key
+                
+                # Test if key is valid
+                Fernet(key_bytes)
+                return key_bytes
+            except Exception as e:
+                logger.error(f"Invalid encryption_key provided in settings: {e}. Falling back to local key file.")
         
         key_file = "encryption_key.key"
-        if os.path.exists(key_file):
-            with open(key_file, "rb") as f:
-                return f.read()
-        else:
-            key = Fernet.generate_key()
-            with open(key_file, "wb") as f:
-                f.write(key)
-            return key
+        try:
+            if os.path.exists(key_file):
+                with open(key_file, "rb") as f:
+                    key = f.read()
+                    # Validate existing key
+                    Fernet(key)
+                    return key
+            else:
+                key = Fernet.generate_key()
+                with open(key_file, "wb") as f:
+                    f.write(key)
+                logger.info("Generated new encryption key for HIPAA compliance")
+                return key
+        except Exception as e:
+            logger.error(f"Error handling encryption key: {e}")
+            raise HTTPException(status_code=500, detail="Failed to initialize encryption key")
 
     def encrypt_data(self, data: bytes) -> bytes:
         return self.cipher_suite.encrypt(data)
@@ -57,12 +72,21 @@ class FileHandler:
                 file_id = str(uuid.uuid4())
 
             file_extension = ".pdf"
-            s3_key = f"pdf_uploads/{file_id}{file_extension}"
+            s3_key = f"medical_pdf_uploads/{file_id}{file_extension}"
 
             logger.info(f"Uploading PDF: {file.filename} -> S3 key: {s3_key}")
 
             file.file.seek(0)
             file_content = file.file.read()
+            
+            # Validate file size (max 50MB)
+            max_size = 50 * 1024 * 1024  # 50MB
+            if len(file_content) > max_size:
+                raise HTTPException(status_code=400, detail="File size exceeds 50MB limit")
+            
+            # Validate PDF header
+            if not file_content.startswith(b'%PDF'):
+                raise HTTPException(status_code=400, detail="Invalid PDF file format")
 
             encrypted_content = self.encrypt_data(file_content)
 
@@ -110,6 +134,7 @@ class FileHandler:
         Download and decrypt PDF file from S3.
         Returns a path to a temporary decrypted file you can serve or process further.
         """
+        tmp_download_path = None
         try:
             # Temporary download encrypted file
             with tempfile.NamedTemporaryFile(delete=False, suffix=".enc") as tmp_download_file:
@@ -129,14 +154,18 @@ class FileHandler:
                 tmp_decrypted_file.flush()
                 decrypted_path = tmp_decrypted_file.name
 
-            # cleanup encrypted temp file
-            os.unlink(tmp_download_path)
-
             return decrypted_path
 
         except Exception as e:
             logger.error(f"Error loading PDF from S3: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to load PDF from S3: {str(e)}")
+        finally:
+            # Cleanup encrypted temp file
+            if tmp_download_path and os.path.exists(tmp_download_path):
+                try:
+                    os.unlink(tmp_download_path)
+                except Exception as e:
+                    logger.warning(f"Failed to cleanup temp file {tmp_download_path}: {e}")
 
 
 # Global instance

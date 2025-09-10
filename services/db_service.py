@@ -437,3 +437,166 @@ class DatabaseService:
                 },
                 "error": str(e)
             }
+
+    @staticmethod
+    def get_audit_logs_enhanced_filter(
+        db: Session,
+        category: Optional[str] = None,
+        user_id: Optional[int] = None,
+        date_range: Optional[str] = None,
+        user_type: Optional[str] = None,
+        limit: int = 100,
+        page: int = 1
+    ) -> Dict[str, Any]:
+        """
+        Get audit logs with comprehensive filtering (category + user + date range) and pagination
+        
+        Args:
+            db: Database session
+            category: Optional category/type filter
+            user_id: Optional user ID filter
+            date_range: Optional date range filter (e.g., '7d', '30d', '1m', '3m', '6m', '1y')
+            user_type: Optional user type filter (e.g., 'admin', 'user') - maps to is_admin field
+            limit: Maximum number of logs per page
+            page: Page number (1-based)
+            
+        Returns:
+            Dictionary containing filtered audit logs with pagination
+        """
+        try:
+            query = db.query(AuditLog)
+            
+            # Apply category filter if specified
+            if category:
+                query = query.filter(AuditLog.category == category)
+            
+            # Apply user filter if specified
+            if user_id:
+                query = query.filter(AuditLog.user_id == user_id)
+            
+            # Apply date range filter if specified
+            if date_range:
+                from datetime import timedelta
+                now = datetime.now(UTC)
+                
+                if date_range == '7d':
+                    start_date = now - timedelta(days=7)
+                elif date_range == '30d':
+                    start_date = now - timedelta(days=30)
+                elif date_range == '1m':
+                    start_date = now - timedelta(days=30)
+                elif date_range == '3m':
+                    start_date = now - timedelta(days=90)
+                elif date_range == '6m':
+                    start_date = now - timedelta(days=180)
+                elif date_range == '1y':
+                    start_date = now - timedelta(days=365)
+                else:
+                    # Try to parse as number of days
+                    try:
+                        days = int(date_range.replace('d', ''))
+                        start_date = now - timedelta(days=days)
+                    except ValueError:
+                        # Default to 7 days if invalid format
+                        start_date = now - timedelta(days=7)
+                
+                query = query.filter(AuditLog.created_at >= start_date)
+            
+            # Apply user type filter if specified (maps to is_admin field)
+            if user_type:
+                # Join with User table to filter by admin status
+                query = query.join(User, AuditLog.user_id == User.id)
+                if user_type.lower() == 'admin':
+                    query = query.filter(User.is_admin == True)
+                elif user_type.lower() == 'user':
+                    query = query.filter(User.is_admin == False)
+            
+            # Get total count for pagination
+            total_count = query.count()
+            
+            # Apply pagination
+            offset = (page - 1) * limit
+            logs = query.order_by(desc(AuditLog.created_at)).offset(offset).limit(limit).all()
+            
+            # Get user information if user_id filter is applied
+            user_info = None
+            if user_id:
+                user = db.query(User).filter(User.id == user_id).first()
+                if user:
+                    user_info = {
+                        "id": user.id,
+                        "email": user.email,
+                        "first_name": user.first_name,
+                        "last_name": user.last_name,
+                        "username": user.username,
+                        "is_admin": user.is_admin
+                    }
+            
+            # Build response
+            log_list = []
+            for log in logs:
+                # Get user first name for each log entry
+                log_user_name = None
+                log_user_is_admin = None
+                if log.user_id:
+                    user = db.query(User).filter(User.id == log.user_id).first()
+                    if user:
+                        log_user_name = user.first_name
+                        log_user_is_admin = user.is_admin
+                
+                log_list.append({
+                    "id": log.id,
+                    "user": log_user_name,
+                    "is_admin": log_user_is_admin,
+                    "category": log.category,
+                    "action_details": log.action_details,
+                    "ip_address": log.ip_address,
+                    "user_agent": log.user_agent,
+                    "created_at": log.created_at.isoformat()
+                })
+            
+            # Calculate pagination info
+            total_pages = (total_count + limit - 1) // limit
+            has_next = page < total_pages
+            has_prev = page > 1
+            
+            return {
+                "filters": {
+                    "category": category,
+                    "user_id": user_id,
+                    "user_type": user_type,
+                    "date_range": date_range,
+                    "user_info": user_info
+                },
+                "logs": log_list,
+                "pagination": {
+                    "current_page": page,
+                    "total_pages": total_pages,
+                    "total_count": total_count,
+                    "limit": limit,
+                    "has_next": has_next,
+                    "has_prev": has_prev
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error retrieving audit logs with enhanced filters: {e}")
+            return {
+                "filters": {
+                    "category": category,
+                    "user_id": user_id,
+                    "user_type": user_type,
+                    "date_range": date_range,
+                    "user_info": None
+                },
+                "logs": [],
+                "pagination": {
+                    "current_page": page,
+                    "total_pages": 0,
+                    "total_count": 0,
+                    "limit": limit,
+                    "has_next": False,
+                    "has_prev": False
+                },
+                "error": str(e)
+            }

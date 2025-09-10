@@ -123,6 +123,7 @@ class User(Base):
     notes = relationship("TicketNote", back_populates="staff_member")
     tasks = relationship("StaffTask", back_populates="assigned_staff")
     audit_logs = relationship("AuditLog", back_populates="user")
+    document_uploads = relationship("DocumentUpload")
 
 
 
@@ -477,6 +478,43 @@ class PatientCommunication(Base):
     
     # Relationships
     patient_ticket = relationship("PatientTicket", back_populates="communications")
+
+class DocumentUpload(Base):
+    """Track PDF uploads and their extracted content"""
+    __tablename__ = "document_uploads"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    # User who uploaded the document
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    
+    # File Information
+    original_filename = Column(String(255), nullable=False)
+    s3_file_path = Column(String(500), nullable=False)  # S3 key/path
+    file_size = Column(Integer, nullable=True)  # File size in bytes
+    
+    # Extracted Content
+    extracted_text = Column(Text, nullable=True)  # OCR extracted text
+    extraction_status = Column(String(20), default="pending")  # pending, completed, failed
+    
+    # Processing Information
+    processing_started_at = Column(DateTime, nullable=True)
+    processing_completed_at = Column(DateTime, nullable=True)
+    processing_error = Column(Text, nullable=True)  # Error message if processing failed
+    
+    # Timestamps
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    
+    # Relationships
+    user = relationship("User", overlaps="document_uploads")
+    
+    # Performance Indexes
+    __table_args__ = (
+        Index('idx_document_uploads_user_id', 'user_id'),
+        Index('idx_document_uploads_created_at', 'created_at'),
+        Index('idx_document_uploads_extraction_status', 'extraction_status'),
+    )
 
 class AuditLog(Base):
     """Enhanced audit trail for HIPAA compliance and security monitoring"""

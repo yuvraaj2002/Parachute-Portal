@@ -33,15 +33,14 @@ class Settings(BaseSettings):
     # PostgreSQL settings
     postgresql_db: str = ""
 
-    # GHL settings
-    ghl_api_key: str = ""
-    location_id: str = ""
-    private_token: str = ""
+    # Mistral API key
+    mistral_api_key: str = ""
 
     # AWS credentials
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
     aws_region: str = ""
+    aws_bucket_name:str = ""
 
     # Optional Fernet encryption key (urlsafe base64-encoded 32-byte key). If set, used for file encryption/decryption across hosts
     encryption_key: str = ""
