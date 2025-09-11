@@ -34,18 +34,37 @@ celery_app.conf.update(
     
     # Redis broker configuration
     broker_connection_retry=True,  # Retry if connection is lost
-    broker_connection_max_retries=3,
-    broker_pool_limit=5,  # 5 broker connections per process
+    broker_connection_max_retries=10,
+    broker_pool_limit=10,  # Increased broker connections
+    broker_connection_retry_on_timeout=True,
+    broker_connection_retry_delay=0.2,
+    broker_connection_retry_max_delay=10.0,
+    broker_connection_timeout=30,
+
+    # Broker transport options for better Redis handling
+    broker_transport_options={
+        'visibility_timeout': 3600,  # 1 hour
+        'retry_policy': {
+            'timeout': 5.0,
+            'max_retries': 3
+        },
+        'socket_connect_timeout': 30,
+        'socket_timeout': 30,
+        'retry_on_timeout': True,
+        'max_connections': 10,
+        'health_check_interval': 30
+    },
 
     # Result backend configuration
     result_backend_transport_options={
-        'master_name': 'mymaster',
-        'visibility_timeout': 3600,
-        'socket_connect_timeout': 5,
-        'socket_timeout': 5,
+        'socket_connect_timeout': 30,
+        'socket_timeout': 30,
         'retry_on_timeout': True,
-        'max_connections': 5,  # 5 backend connections per process
-        'health_check_interval': 30
+        'max_connections': 10,  # Increased backend connections
+        'health_check_interval': 30,
+        'connection_retry_on_timeout': True,
+        'connection_retry_delay': 0.2,
+        'connection_retry_max_delay': 10.0
     },
     
     # Worker configuration - UPDATED FOR 20-CONNECTION BUDGET
@@ -76,6 +95,9 @@ def pdf_processing_task(self, document_id: int, s3_key: str, user_id: int, task_
     # Use provided task_id or generate one
     if not task_id:
         task_id = self.request.id
+    else:
+        # Use the provided task_id for Redis tracking
+        task_id = task_id
     
     try:
         logger.info(f"Processing PDF file from S3: {s3_key} for document_id: {document_id}, task_id: {task_id}")
@@ -93,6 +115,7 @@ def pdf_processing_task(self, document_id: int, s3_key: str, user_id: int, task_
         redis_service = RedisService()
         
         # Set initial status in Redis
+        logger.info(f"Setting initial Redis status for task_id: {task_id}")
         redis_service.update_task_progress(
             task_id=task_id,
             stage="starting",
@@ -100,6 +123,7 @@ def pdf_processing_task(self, document_id: int, s3_key: str, user_id: int, task_
             message="Initializing PDF processing task",
             data={"document_id": document_id, "user_id": user_id}
         )
+        logger.info(f"Initial Redis status set for task_id: {task_id}")
         
         # Get database session
         db = next(get_db())
@@ -181,7 +205,8 @@ def pdf_processing_task(self, document_id: int, s3_key: str, user_id: int, task_
             
             # Process extracted text with LLM
             logger.info(f"Processing extracted text with LLM for document {document_id}")
-            data = llm_service.process_medical_document(markdown_content)
+            import asyncio
+            data = asyncio.run(llm_service.process_medical_document(markdown_content))
             
             # Update Redis status - Saving results
             redis_service.update_task_progress(

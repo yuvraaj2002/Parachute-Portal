@@ -50,10 +50,13 @@ class Settings(BaseSettings):
     
     # Redis connection pool settings
     redis_max_connections: int = 20
-    redis_socket_connect_timeout: int = 5
-    redis_socket_timeout: int = 5
+    redis_socket_connect_timeout: int = 30
+    redis_socket_timeout: int = 30
     redis_health_check_interval: int = 30
     redis_retry_on_timeout: bool = True
+    redis_connection_retry_on_timeout: bool = True
+    redis_connection_retry_delay: float = 0.2
+    redis_connection_retry_max_delay: float = 10.0
     
     # Celery settings
     celery_broker_url: str = "redis://localhost:6379/0"

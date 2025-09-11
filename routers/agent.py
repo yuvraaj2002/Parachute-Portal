@@ -191,6 +191,8 @@ async def stream_processing_status(task_id: str):
         redis_service = RedisService()
         last_progress = -1
         last_stage = None
+        retry_count = 0
+        max_retries = 10  # Wait up to 10 seconds for task to appear
         
         while True:
             try:
@@ -198,9 +200,15 @@ async def stream_processing_status(task_id: str):
                 status = redis_service.get_task_status(task_id)
                 
                 if not status:
-                    # Task might not exist or Redis key expired
-                    yield f"data: {json.dumps({'error': 'Task not found or expired', 'task_id': task_id})}\n\n"
-                    break
+                    retry_count += 1
+                    if retry_count <= max_retries:
+                        # Wait a bit for the task to start and set initial status
+                        await asyncio.sleep(1)
+                        continue
+                    else:
+                        # Task might not exist or Redis key expired
+                        yield f"data: {json.dumps({'error': 'Task not found or expired', 'task_id': task_id})}\n\n"
+                        break
                 
                 # Only send update if progress or stage changed
                 current_progress = status.get('progress', 0)
@@ -234,61 +242,4 @@ async def stream_processing_status(task_id: str):
             "X-Accel-Buffering": "no"
         }
     )
-
-@router.get("/task-status/{task_id}")
-async def get_task_status(task_id: str):
-    """Get current processing status from Redis"""
-    try:
-        redis_service = RedisService()
-        status = redis_service.get_task_status(task_id)
-        
-        if not status:
-            # Also check Celery's result backend
-            try:
-                task_result = celery_app.AsyncResult(task_id)
-                if task_result.ready():
-                    if task_result.successful():
-                        status = task_result.result
-                    else:
-                        status = {"error": "Task failed", "traceback": str(task_result.traceback)}
-            except:
-                pass
-            
-            if not status:
-                raise HTTPException(status_code=404, detail="Task ID not found")
-        
-        return status
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error retrieving task status for task {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error retrieving task status: {str(e)}")
-
-@router.get("/task-info/{task_id}")
-async def get_celery_task_info(task_id: str):
-    """Get detailed Celery task information"""
-    try:
-        task_result = celery_app.AsyncResult(task_id)
-        
-        info = {
-            "task_id": task_id,
-            "status": task_result.status,
-            "ready": task_result.ready(),
-            "successful": task_result.successful(),
-            "failed": task_result.failed(),
-            "state": task_result.state
-        }
-        
-        if task_result.ready():
-            if task_result.successful():
-                info["result"] = task_result.result
-            else:
-                info["error"] = str(task_result.result)
-                info["traceback"] = str(task_result.traceback)
-        
-        return info
-        
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Task not found: {str(e)}")
 

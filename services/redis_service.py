@@ -17,7 +17,10 @@ class RedisService:
                 socket_timeout=settings.redis_socket_timeout,
                 health_check_interval=settings.redis_health_check_interval,
                 retry_on_timeout=settings.redis_retry_on_timeout,
-                decode_responses=True
+                retry_on_error=[redis.exceptions.TimeoutError, redis.exceptions.ConnectionError],
+                decode_responses=True,
+                socket_keepalive=True,
+                socket_keepalive_options={}
             )
             # Test connection
             self.redis_client.ping()
@@ -158,10 +161,14 @@ class RedisService:
         try:
             import json
             status_key = f"task_status:{task_id}"
+            logger.info(f"Looking for task status with key: {status_key}")
             status_json = self.redis_client.get(status_key)
             if status_json:
+                logger.info(f"Found task status for {task_id}: {status_json}")
                 return json.loads(status_json)
-            return None
+            else:
+                logger.warning(f"No task status found for task_id: {task_id}")
+                return None
         except Exception as e:
             logger.error(f"Error getting task status from Redis: {e}")
             return None
@@ -179,7 +186,10 @@ class RedisService:
         if data:
             status_data.update(data)
         
-        return self.set_task_status(task_id, status_data)
+        logger.info(f"Updating task progress for {task_id}: {status_data}")
+        result = self.set_task_status(task_id, status_data)
+        logger.info(f"Task progress update result for {task_id}: {result}")
+        return result
     
     def delete_task_status(self, task_id: str) -> bool:
         """Delete task status from Redis"""
