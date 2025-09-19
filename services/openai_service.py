@@ -7,7 +7,7 @@ from rich import print
 import logging
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
-from prompt_registry.document_extraction_prompt import system_prompt_doc_extraction, human_prompt_doc_extraction, MEDICAL_DOC_EXTRACTION_SCHEMA
+from prompt_registry.document_extraction_prompt import system_prompt_doc_extraction, human_prompt_doc_extraction, MEDICAL_DOC_SCHEMA
 
 class LLMService:
     def __init__(self):
@@ -25,7 +25,7 @@ class LLMService:
                 HumanMessage(
                     human_prompt_doc_extraction.format(
                         markdown_content=markdown_content,
-                        schema=MEDICAL_DOC_EXTRACTION_SCHEMA
+                        schema=MEDICAL_DOC_SCHEMA
                     )
                 )
             ]
