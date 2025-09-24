@@ -17,6 +17,8 @@ langchain_openai
 boto3
 mistralai
 celery
+dropbox-sign
+
 
 # For documentation
 markdown2

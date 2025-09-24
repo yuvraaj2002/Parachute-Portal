@@ -23,178 +23,157 @@ From the OCR content, extract every field described in the Medical Extraction / 
 OUTPUT RULES (MUST FOLLOW EXACTLY):
 1. Output ONLY valid JSON (no additional text). Keys must appear exactly as in the schema. Use `null` when a value is not present.
 2. Dates MUST be normalized to ISO 8601 date only: YYYY-MM-DD. If you can only extract a partial date (month/year) use YYYY-MM-00. If no date, null.
-3. Phone numbers: try to normalize to E.164 if country is clear (e.g., +1XXXXXXXXXX). If country unknown, return local cleaned digits only (e.g., 4155551212). Also provide original_text and evidence for every phone found.
+3. Phone numbers: try to normalize to E.164 if country is clear (e.g., +1XXXXXXXXXX). If country unknown, return local cleaned digits only (e.g., 4155551212). Also provide original_text if available.
 4. Names: Title Case (e.g., "John A. Smith"). IDs (NPI, DEA, MBI) return as extracted trimmed alphanumeric with uppercase where appropriate.
 5. All lists (ICD10, HCPCS, phone_numbers, etc.) must be arrays. If none, return empty array [].
-6. For every extracted field, include an accompanying `evidence` array item (may be empty) with objects: { "text": "...", "page_num": N, "bbox": [x1,y1,x2,y2], "confidence": 0.0-1.0 } using the best matching OCR span(s).
-7. If a field is present in multiple places (e.g., provider appears on page 1 and page 3), include all evidence items.
-8. If a checklist item (e.g., ABN signed & dated) is present as a checkbox or signature line, return a boolean presence field and included signature evidence where applicable.
+6. For every extracted field, include a `confidence` score (0.0-1.0) representing how confident you are that this field value is correct. If field not found, value=null and confidence=0.0.
+7. If a field is present in multiple places (e.g., provider appears on page 1 and page 3), provide a single value and assign confidence reflecting overall certainty.
+8. For checklist items (e.g., ABN signed & dated) return a boolean presence field with accompanying confidence.
 9. Return `extraction_confidence` top-level (0.0-1.0) — your best estimate for completeness/accuracy of the extracted JSON.
-10. If a value is ambiguous (multiple candidate values), include `candidates` for that field with each candidate's evidence and a short `reason` for selection (which candidate you chose and why). If you choose one, populate the primary field and include others under `candidates`.
+10. If a value is ambiguous (multiple candidate values), include `candidates` for that field with each candidate's value, confidence, and a short `reason` for selection. Populate primary field with best choice.
 
-SCHEMA (output JSON must match this structure; include `evidence` for each field or subfield):
+SCHEMA (output JSON must match this structure; replace evidence arrays with confidence):
 
 {
   "patient_information": {
-    "full_name": { "value": null, "evidence": [] },
-    "date_of_birth": { "value": null, "evidence": [] },
-    "gender": { "value": null, "evidence": [] },
+    "full_name": { "value": null, "confidence": 0.0 },
+    "date_of_birth": { "value": null, "confidence": 0.0 },
+    "gender": { "value": null, "confidence": 0.0 },
     "address": {
-      "street": { "value": null, "evidence": [] },
-      "city": { "value": null, "evidence": [] },
-      "state": { "value": null, "evidence": [] },
-      "zip": { "value": null, "evidence": [] }
+      "street": { "value": null, "confidence": 0.0 },
+      "city": { "value": null, "confidence": 0.0 },
+      "state": { "value": null, "confidence": 0.0 },
+      "zip": { "value": null, "confidence": 0.0 }
     },
-    "phone_numbers": [ { "value": null, "original_text": null, "evidence": [] } ],
-    "email": { "value": null, "evidence": [] },
+    "phone_numbers": [ { "value": null, "original_text": null, "confidence": 0.0 } ],
+    "email": { "value": null, "confidence": 0.0 },
     "emergency_contact": {
-      "name": { "value": null, "evidence": [] },
-      "relation": { "value": null, "evidence": [] },
-      "phone": { "value": null, "original_text": null, "evidence": [] }
+      "name": { "value": null, "confidence": 0.0 },
+      "relation": { "value": null, "confidence": 0.0 },
+      "phone": { "value": null, "original_text": null, "confidence": 0.0 }
     },
-    "copy_of_id_present": { "value": null, "evidence": [] }  // e.g., Medicare/insurance card image/text presence
+    "copy_of_id_present": { "value": null, "confidence": 0.0 }
   },
 
   "insurance_billing": {
-    "primary_payer": { "value": null, "evidence": [] }, // Medicare/Medicaid/Commercial/WC
-    "mbi_or_medicaid_id": { "value": null, "evidence": [] },
-    "policy_member_id": { "value": null, "evidence": [] },
-    "group_number": { "value": null, "evidence": [] },
-    "bin_pcn": { "value": null, "evidence": [] },
-    "secondary_insurance": { "value": null, "evidence": [] },
-    "workers_comp_claim": { "value": null, "evidence": [] },
+    "primary_payer": { "value": null, "confidence": 0.0 },
+    "mbi_or_medicaid_id": { "value": null, "confidence": 0.0 },
+    "policy_member_id": { "value": null, "confidence": 0.0 },
+    "group_number": { "value": null, "confidence": 0.0 },
+    "bin_pcn": { "value": null, "confidence": 0.0 },
+    "secondary_insurance": { "value": null, "confidence": 0.0 },
+    "workers_comp_claim": { "value": null, "confidence": 0.0 },
     "guarantor": {
-      "name": { "value": null, "evidence": [] },
-      "relation": { "value": null, "evidence": [] },
-      "contact": { "value": null, "original_text": null, "evidence": [] }
+      "name": { "value": null, "confidence": 0.0 },
+      "relation": { "value": null, "confidence": 0.0 },
+      "contact": { "value": null, "original_text": null, "confidence": 0.0 }
     }
   },
 
   "provider_prescriber": {
-    "provider_full_name": { "value": null, "evidence": [] },
-    "npi_number": { "value": null, "evidence": [] },
-    "dea_number": { "value": null, "evidence": [] },
-    "specialty": { "value": null, "evidence": [] },
-    "clinic_facility_name": { "value": null, "evidence": [] },
+    "provider_full_name": { "value": null, "confidence": 0.0 },
+    "npi_number": { "value": null, "confidence": 0.0 },
+    "dea_number": { "value": null, "confidence": 0.0 },
+    "specialty": { "value": null, "confidence": 0.0 },
+    "clinic_facility_name": { "value": null, "confidence": 0.0 },
     "clinic_address": {
-       "street": { "value": null, "evidence": [] },
-       "city": { "value": null, "evidence": [] },
-       "state": { "value": null, "evidence": [] },
-       "zip": { "value": null, "evidence": [] }
+       "street": { "value": null, "confidence": 0.0 },
+       "city": { "value": null, "confidence": 0.0 },
+       "state": { "value": null, "confidence": 0.0 },
+       "zip": { "value": null, "confidence": 0.0 }
     },
-    "clinic_phone": { "value": null, "original_text": null, "evidence": [] },
-    "clinic_fax": { "value": null, "original_text": null, "evidence": [] },
-    "signature_date_signed": { "value": null, "evidence": [] },
-    "signature_present": { "value": null, "evidence": [] },
-    "pecos_enrollment_present": { "value": null, "evidence": [] }
+    "clinic_phone": { "value": null, "original_text": null, "confidence": 0.0 },
+    "clinic_fax": { "value": null, "original_text": null, "confidence": 0.0 },
+    "signature_date_signed": { "value": null, "confidence": 0.0 },
+    "signature_present": { "value": null, "confidence": 0.0 },
+    "pecos_enrollment_present": { "value": null, "confidence": 0.0 }
   },
 
   "clinical_documentation": {
-    "icd10_codes": [ { "code": null, "description": null, "evidence": [] } ],
-    "medical_necessity_summary": { "value": null, "evidence": [] },
-    "onset_or_injury_date": { "value": null, "evidence": [] },
-    "prior_treatments": { "value": null, "evidence": [] },
-    "face_to_face_documentation_present": { "value": null, "evidence": [] }
+    "icd10_codes": [ { "code": null, "description": null, "confidence": 0.0 } ],
+    "medical_necessity_summary": { "value": null, "confidence": 0.0 },
+    "onset_or_injury_date": { "value": null, "confidence": 0.0 },
+    "prior_treatments": { "value": null, "confidence": 0.0 },
+    "face_to_face_documentation_present": { "value": null, "confidence": 0.0 }
   },
 
   "orders_dme_details": {
-    "hcpcs_codes": [ { "code": null, "evidence": [] } ],
-    "item_descriptions": [ { "value": null, "evidence": [] } ],
-    "quantity_ordered": { "value": null, "evidence": [] },
-    "frequency_replacement": { "value": null, "evidence": [] },
-    "length_of_need": { "value": null, "evidence": [] },
-    "supply_start_date": { "value": null, "evidence": [] },
-    "place_of_service": { "value": null, "evidence": [] },
-    "serial_lot_number": { "value": null, "evidence": [] }
+    "hcpcs_codes": [ { "code": null, "confidence": 0.0 } ],
+    "item_descriptions": [ { "value": null, "confidence": 0.0 } ],
+    "quantity_ordered": { "value": null, "confidence": 0.0 },
+    "frequency_replacement": { "value": null, "confidence": 0.0 },
+    "length_of_need": { "value": null, "confidence": 0.0 },
+    "supply_start_date": { "value": null, "confidence": 0.0 },
+    "place_of_service": { "value": null, "confidence": 0.0 },
+    "serial_lot_number": { "value": null, "confidence": 0.0 }
   },
 
   "patient_financials": {
-    "abn_or_notice_present": { "value": null, "evidence": [] },
-    "estimated_cost": { "value": null, "currency": "USD", "evidence": [] },
-    "patient_choice_option": { "value": null, "evidence": [] },
-    "aob_signed_dated": { "value": null, "evidence": [] },
-    "supplier_standards_ack_signed": { "value": null, "evidence": [] },
-    "hipaa_acknowledgement_present": { "value": null, "evidence": [] }
+    "abn_or_notice_present": { "value": null, "confidence": 0.0 },
+    "estimated_cost": { "value": null, "currency": "USD", "confidence": 0.0 },
+    "patient_choice_option": { "value": null, "confidence": 0.0 },
+    "aob_signed_dated": { "value": null, "confidence": 0.0 },
+    "supplier_standards_ack_signed": { "value": null, "confidence": 0.0 },
+    "hipaa_acknowledgement_present": { "value": null, "confidence": 0.0 }
   },
 
   "delivery_proof": {
-    "proof_of_delivery_signed": { "value": null, "evidence": [] },
-    "pod_signed_date": { "value": null, "evidence": [] },
-    "pod_address": { "value": null, "evidence": [] },
-    "pod_item_list": { "value": null, "evidence": [] },
-    "courier_documentation_present": { "value": null, "evidence": [] },
-    "tracking_number": { "value": null, "evidence": [] }
+    "proof_of_delivery_signed": { "value": null, "confidence": 0.0 },
+    "pod_signed_date": { "value": null, "confidence": 0.0 },
+    "pod_address": { "value": null, "confidence": 0.0 },
+    "pod_item_list": { "value": null, "confidence": 0.0 },
+    "courier_documentation_present": { "value": null, "confidence": 0.0 },
+    "tracking_number": { "value": null, "confidence": 0.0 }
   },
 
   "administrative_tracking": {
-    "internal_case_id": { "value": null, "evidence": [] },
-    "referral_source": { "value": null, "evidence": [] },
-    "prior_authorization_number": { "value": null, "evidence": [] },
-    "recertification_documentation_present": { "value": null, "evidence": [] },
-    "replacement_vs_new_notes": { "value": null, "evidence": [] }
+    "internal_case_id": { "value": null, "confidence": 0.0 },
+    "referral_source": { "value": null, "confidence": 0.0 },
+    "prior_authorization_number": { "value": null, "confidence": 0.0 },
+    "recertification_documentation_present": { "value": null, "confidence": 0.0 },
+    "replacement_vs_new_notes": { "value": null, "confidence": 0.0 }
   },
 
   "compliance_checklists": {
     "medicare_dme_file": {
-       "patient_demographics_with_mbi": { "value": null, "evidence": [] },
-       "medicare_card_copy_present": { "value": null, "evidence": [] },
-       "ordering_provider_info": { "value": null, "evidence": [] },
-       "dwo_signed_dated": { "value": null, "evidence": [] },
-       "face_to_face_note_present": { "value": null, "evidence": [] },
-       "icd10_linked_to_hcpcs": { "value": null, "evidence": [] },
-       "hcpcs_present": { "value": null, "evidence": [] },
-       "abn_signed_dated": { "value": null, "evidence": [] },
-       "aob_signed_dated": { "value": null, "evidence": [] },
-       "supplier_standards_ack_signed": { "value": null, "evidence": [] },
-       "pod_signed_date_present": { "value": null, "evidence": [] },
-       "serial_lot_number_logged": { "value": null, "evidence": [] },
-       "prior_auth_approval_present": { "value": null, "evidence": [] }
+       "patient_demographics_with_mbi": { "value": null, "confidence": 0.0 },
+       "medicare_card_copy_present": { "value": null, "confidence": 0.0 },
+       "ordering_provider_info": { "value": null, "confidence": 0.0 },
+       "dwo_signed_dated": { "value": null, "confidence": 0.0 },
+       "face_to_face_note_present": { "value": null, "confidence": 0.0 },
+       "icd10_linked_to_hcpcs": { "value": null, "confidence": 0.0 },
+       "hcpcs_present": { "value": null, "confidence": 0.0 },
+       "abn_signed_dated": { "value": null, "confidence": 0.0 },
+       "aob_signed_dated": { "value": null, "confidence": 0.0 },
+       "supplier_standards_ack_signed": { "value": null, "confidence": 0.0 },
+       "pod_signed_date_present": { "value": null, "confidence": 0.0 },
+       "serial_lot_number_logged": { "value": null, "confidence": 0.0 },
+       "prior_auth_approval_present": { "value": null, "confidence": 0.0 }
     },
-    "medicaid_dme_file": { /* same style booleans/evidence as needed */ },
-    "commercial_dme_file": { /* same style booleans/evidence as needed */ },
-    "workerscomp_dme_file": { /* same style booleans/evidence as needed */ }
+    "medicaid_dme_file": { /* same style booleans/confidence as needed */ },
+    "commercial_dme_file": { /* same style booleans/confidence as needed */ },
+    "workerscomp_dme_file": { /* same style booleans/confidence as needed */ }
   },
 
   "meta": {
-    "document_type_guess": { "value": null, "evidence": [] }, // e.g., "DWO", "Prescription", "Insurance Card", "Delivery Note"
+    "document_type_guess": { "value": null, "confidence": 0.0 },
     "pages_checked": [1,2],
     "extraction_confidence": 0.0,
     "notes": null
   }
 }
 
-EXTRACTION GUIDELINES / TIPS:
-- Use headings and neighboring text to decide scope (e.g., "Patient:", "DOB:", "Policy #", "NPI", "HCPCS", "ICD-10").
-- If a numeric field matches a well-known pattern, validate and include: NPI (10 digits), ICD-10 (one letter + digits possibly with dot), HCPCS (one letter + 4 digits), MBI (alphanumeric length ~11) — but if pattern not matched, still include extracted string as-is under value and add reason in notes.
-- For signatures: detect words like "signature", "signed", "sign:", a handwritten-looking line text like "________________", and any adjacent name/date. If signature present, set signature_present true and include date if adjacent.
-- For checkboxes: detect characters like [ ] [x] (x) ✓ or words "YES/NO", "Signed" near checkbox. Use heuristic to mark present/absent.
-- For amounts: remove currency symbols and normalize to number with 2 decimals; set currency to "USD" unless another currency is detected.
-- For address parsing: try to split into street / city / state / zip. If you cannot split, put full address into `street` and leave others null.
-- For any ambiguous or multiple candidate values, populate `candidates` array next to that field's object with candidate entries { "value": "...", "evidence": [...], "reason": "..." }.
-
-EXAMPLE (minimal illustrative output — produce full schema in real run):
-
-{
-  "patient_information": {
-    "full_name": { "value": "Jane Q. Public", "evidence": [{ "text":"Jane Q. Public", "page_num":1, "bbox":[...], "confidence":0.98 }] },
-    "date_of_birth": { "value":"1979-03-14", "evidence":[...] },
-    ...
-  },
-  ...
-  "meta": {
-    "document_type_guess": { "value": "Detailed Written Order (DWO)", "evidence":[...] },
-    "pages_checked": [1,2,3],
-    "extraction_confidence": 0.84,
-    "notes": "MBI ambiguous; two candidates found in header and footer."
-  }
-}
-
 FINAL:
 - Produce ONLY the JSON object (matching schema). Do not return any commentary.
-- If no fields could be extracted at all, return the schema with all values null/empty arrays and extraction_confidence 0.0.
+- If no fields could be extracted at all, return the schema with all values null and confidence 0.0.
 
-Reference: Use the extraction checklist rules from the "OCR Data Extraction & Compliance Checklist" as the authoritative list of required fields and checkboxes. (Patient demographics, Insurance/Billing, Provider info, Clinical documentation, Orders/DME details, Patient Financials, Delivery/Proof, Administrative/Tracking and the Medicare/Medicaid/Commercial/Workers’ Comp checklists). :contentReference[oaicite:1]{index=1}
+EXTRACTION GUIDELINES / TIPS:
+- Use headings and neighboring text to decide scope (e.g., "Patient:", "DOB:", "Policy #", "NPI", "HCPCS", "ICD-10").
+- Validate IDs (NPI=10 digits, ICD10 pattern, HCPCS pattern, MBI length ~11) but include value anyway if pattern fails; assign confidence appropriately.
+- For signatures and checkboxes, assign confidence to reflect certainty of presence.
+- For ambiguous or multiple candidates, populate `candidates` with value, confidence, and reason.
 """
+
 human_prompt_doc_extraction = (
     "Here is the OCR Markdown content:\n"
     "{markdown_content}\n\n"

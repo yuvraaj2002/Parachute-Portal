@@ -79,6 +79,9 @@ class DocumentUpload(Base):
     # User who uploaded the document
     user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
     
+    # Document Group (for multi-document processing)
+    document_group_id = Column(String(100), nullable=True)  # UUID string to group documents together
+    
     # File Information
     original_filename = Column(String(255), nullable=False)
     s3_file_path = Column(String(500), nullable=False)  # S3 key/path
@@ -105,6 +108,7 @@ class DocumentUpload(Base):
         Index('idx_document_uploads_user_id', 'user_id'),
         Index('idx_document_uploads_created_at', 'created_at'),
         Index('idx_document_uploads_extraction_status', 'extraction_status'),
+        Index('idx_document_uploads_group_id', 'document_group_id'),
     )
 
 class AuditLog(Base):

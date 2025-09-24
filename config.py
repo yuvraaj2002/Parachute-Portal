@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     redis_connection_retry_on_timeout: bool = True
     redis_connection_retry_delay: float = 0.2
     redis_connection_retry_max_delay: float = 10.0
+
+    # Dropbox Sign in configuration
+    dropbox_api_key: str = ""
+    dropbox_client_id: str = ""
     
     # Celery settings
     celery_broker_url: str = "redis://localhost:6379/0"

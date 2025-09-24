@@ -336,3 +336,7 @@ htmlcov/
 
 # Ignore testing folder
 /testing/
+docs/
+
+# ignore zip files
+*.zip
