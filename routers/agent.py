@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime, UTC
 from pydantic import BaseModel
 import asyncio
+from sqlalchemy import func, distinct
 
 # Add project root to path for imports
 ROOT_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -24,7 +25,7 @@ from config import settings
 from langchain_core.messages import SystemMessage, HumanMessage
 from prompt_registry import *
 from services.aws_service import FileHandler
-from services.celery_service import celery_app, pdf_processing_task, multi_pdf_processing_task
+from services.celery_service import celery_app, multi_pdf_processing_task
 from services.redis_service import RedisService
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,52 @@ file_handler = FileHandler()
 
 # Initialize services
 llm_service = LLMService()
+
+@router.get("/health/celery")
+async def check_celery_health():
+    """Check if Celery is properly configured and connected"""
+    try:
+        # Check if Celery app is initialized
+        if not celery_app:
+            return {"status": "error", "message": "Celery app not initialized"}
+        
+        # Check if tasks are registered
+        registered_tasks = list(celery_app.tasks.keys())
+        logger.info(f"Registered Celery tasks: {registered_tasks}")
+        
+        # Check if our specific task is registered
+        if 'multi_pdf_processing' not in registered_tasks:
+            return {"status": "error", "message": "multi_pdf_processing task not registered"}
+        
+        # Try to inspect the worker
+        try:
+            inspect = celery_app.control.inspect()
+            active_workers = inspect.active()
+            if active_workers:
+                logger.info(f"Active Celery workers: {list(active_workers.keys())}")
+                return {
+                    "status": "healthy", 
+                    "message": "Celery is properly configured and workers are active",
+                    "active_workers": list(active_workers.keys()),
+                    "registered_tasks": registered_tasks
+                }
+            else:
+                return {
+                    "status": "warning", 
+                    "message": "Celery is configured but no active workers found",
+                    "registered_tasks": registered_tasks
+                }
+        except Exception as e:
+            logger.warning(f"Could not inspect Celery workers: {e}")
+            return {
+                "status": "warning", 
+                "message": f"Celery is configured but worker inspection failed: {str(e)}",
+                "registered_tasks": registered_tasks
+            }
+            
+    except Exception as e:
+        logger.error(f"Celery health check failed: {e}")
+        return {"status": "error", "message": f"Celery health check failed: {str(e)}"}
 
 @router.post("/analyze-document")
 async def analyze_medical_doc(
@@ -115,7 +162,7 @@ async def analyze_medical_doc(
             # Save the document upload to the database
             document_upload = DocumentUpload(
                 user_id=current_user.id,
-                document_group_id=group_id,  # Group all documents together
+                document_group_id=group_id, 
                 original_filename=s3_result["original_filename"],
                 s3_file_path=s3_result["s3_key"],
                 file_size=file_size,
@@ -140,19 +187,38 @@ async def analyze_medical_doc(
             document_ids = [doc.id for doc in uploaded_documents]
             s3_keys = [result["s3_key"] for result in s3_results]
             
+            logger.info(f"Task parameters - document_ids: {document_ids}, s3_keys: {s3_keys}, user_id: {current_user.id}, task_id: {task_id}, group_id: {group_id}")
+            
+            # Check if Celery app is properly configured
+            if not celery_app:
+                raise Exception("Celery app is not properly initialized")
+            
+            # Check if the task is properly registered
+            if not hasattr(multi_pdf_processing_task, 'apply_async'):
+                raise Exception("multi_pdf_processing_task is not properly registered as a Celery task")
+            
             task = multi_pdf_processing_task.apply_async(
                 args=[document_ids, s3_keys, current_user.id, task_id, group_id],
                 task_id=task_id
             )
-            logger.info(f"Multi-document processing task queued with task ID: {task.id}")
+            logger.info(f"Multi-document processing task queued successfully with task ID: {task.id}")
+            
+            # Verify task was queued
+            if not task.id:
+                raise Exception("Task was not queued - no task ID returned")
+                
         except Exception as e:
             logger.error(f"Failed to queue multi-document processing task: {e}")
+            logger.error(f"Task delegation error details: {type(e).__name__}: {str(e)}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+            
             # Update all document statuses to failed
             for doc in uploaded_documents:
                 doc.extraction_status = "failed"
                 doc.processing_error = f"Failed to queue processing task: {str(e)}"
             db.commit()
-            raise HTTPException(status_code=500, detail="Failed to queue multi-document processing task")
+            raise HTTPException(status_code=500, detail=f"Failed to queue multi-document processing task: {str(e)}")
 
         logger.info(f"Multi-document upload initiated successfully for user {current_user.id}, {len(files)} files")
         return {
@@ -163,8 +229,6 @@ async def analyze_medical_doc(
                 {
                     "document_id": doc.id,
                     "original_filename": doc.original_filename,
-                    "s3_key": s3_results[i]["s3_key"],
-                    "s3_url": s3_results[i]["s3_url"],
                     "file_size": doc.file_size
                 }
                 for i, doc in enumerate(uploaded_documents)
@@ -179,52 +243,6 @@ async def analyze_medical_doc(
         logger.error(f"Error processing PDFs for user {getattr(current_user, 'id', 'unknown')}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error processing PDFs: {str(e)}")
 
-@router.get("/documents")
-async def get_user_documents(
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Get all uploaded documents for the current user.
-    """
-    try:
-        logger.info(f"Retrieving documents for user {current_user.id}")
-
-        # Query all document uploads for the current user
-        documents = db.query(DocumentUpload).filter(
-            DocumentUpload.user_id == current_user.id
-        ).order_by(DocumentUpload.created_at.desc()).all()
-        
-        logger.info(f"Found {len(documents)} documents for user {current_user.id}")
-
-        # Convert to response format
-        document_list = []
-        for doc in documents:
-            logger.debug(f"Processing document id {doc.id} for user {current_user.id}")
-            document_list.append({
-                "id": doc.id,
-                "original_filename": doc.original_filename,
-                "s3_file_path": doc.s3_file_path,
-                "file_size": doc.file_size,
-                "extraction_status": doc.extraction_status,
-                "processing_started_at": doc.processing_started_at.isoformat() if doc.processing_started_at else None,
-                "processing_completed_at": doc.processing_completed_at.isoformat() if doc.processing_completed_at else None,
-                "processing_error": doc.processing_error,
-                "created_at": doc.created_at.isoformat(),
-                "updated_at": doc.updated_at.isoformat(),
-                "extracted_text": doc.extracted_text[:500] + "..." if doc.extracted_text and len(doc.extracted_text) > 500 else doc.extracted_text  # Truncate for list view
-            })
-        
-        logger.info(f"Documents for user {current_user.id} retrieved successfully")
-        return {
-            "message": "Documents retrieved successfully",
-            "total_documents": len(document_list),
-            "documents": document_list
-        }
-        
-    except Exception as e:
-        logger.error(f"Error retrieving documents for user {getattr(current_user, 'id', 'unknown')}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error retrieving documents: {str(e)}")
 
 @router.get("/document-groups")
 async def get_user_document_groups(
@@ -239,7 +257,6 @@ async def get_user_document_groups(
 
         # Query all document groups for the current user
         # Group by document_group_id and get unique groups
-        from sqlalchemy import func, distinct
         
         # Get unique group IDs for this user
         group_ids = db.query(distinct(DocumentUpload.document_group_id)).filter(
@@ -375,7 +392,6 @@ async def get_merged_json_result(
         for doc in documents:
             if doc.extracted_text:
                 try:
-                    import json
                     # Try to parse as JSON - if successful, this is our merged result
                     json.loads(doc.extracted_text)
                     merged_doc = doc
@@ -388,7 +404,6 @@ async def get_merged_json_result(
             raise HTTPException(status_code=404, detail="No merged JSON result available")
         
         # Parse and return the merged JSON
-        import json
         merged_json = json.loads(merged_doc.extracted_text)
         logger.info(f"Merged JSON result retrieved for group {group_id} from document {merged_doc.id}")
         return {
@@ -462,4 +477,6 @@ async def stream_processing_status(task_id: str):
             "X-Accel-Buffering": "no"
         }
     )
+
+
 
