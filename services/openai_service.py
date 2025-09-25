@@ -15,7 +15,8 @@ from prompt_registry.document_extraction_prompt import system_prompt_doc_extract
 class LLMService:
     def __init__(self):
         self.openai_client = OpenAI(api_key=settings.openai_api_key)
-        self.openai = ChatOpenAI(api_key=settings.openai_api_key, model="gpt-4o-mini", temperature=0.2,timeout=None, max_retries=2)
+        #self.openai = ChatOpenAI(api_key=settings.openai_api_key, model="gpt-4o-mini", temperature=0.2,timeout=None, max_retries=2)
+        self.openai = ChatOpenAI(api_key=settings.openai_api_key, model="gpt-4.1",timeout=None, max_retries=2)
         self.logger = logging.getLogger(__name__)
 
     async def process_medical_document(self, markdown_content: str):
