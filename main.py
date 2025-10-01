@@ -19,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from routers.auth import router as auth_router
 from routers.admin import router as admin_router
 from routers.agent import router as agent_router
+from routers.templates import router as templates_router
 
 app = FastAPI(
     title="Parachute Portal API",
@@ -47,6 +48,7 @@ async def health_check():
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(agent_router)
+app.include_router(templates_router)
 
 
 if __name__ == "__main__":

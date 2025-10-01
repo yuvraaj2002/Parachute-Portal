@@ -18,6 +18,10 @@ boto3
 mistralai
 celery
 dropbox-sign
+pypandoc
+markdown
+pdfrw
+
 
 
 # For documentation

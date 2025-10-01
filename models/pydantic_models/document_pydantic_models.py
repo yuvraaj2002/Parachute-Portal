@@ -1,4 +1,6 @@
 from pydantic import BaseModel
+from typing import List
 
-class SignatureRequestInput(BaseModel):
-    document_id: str 
+class GenerateDocumentRequest(BaseModel):
+    group_id : str
+    template_ids: List[int] 

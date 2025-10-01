@@ -27,11 +27,12 @@ from prompt_registry import *
 from services.aws_service import FileHandler
 from services.celery_service import celery_app, multi_pdf_processing_task
 from services.redis_service import RedisService
+from services.pdf_service import PdfProcessor
 
 logger = logging.getLogger(__name__)
 
 try:
-    from services.pdf_service import MistralPDFExtractor
+    MistralPDFExtractor = PdfProcessor()
 except ImportError as e:
     logger.warning(f"Could not import MistralPDFExtractor: {e}")
     MistralPDFExtractor = None
@@ -477,6 +478,8 @@ async def stream_processing_status(task_id: str):
             "X-Accel-Buffering": "no"
         }
     )
+
+
 
 
 

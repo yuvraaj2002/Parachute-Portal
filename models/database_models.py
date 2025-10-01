@@ -111,6 +111,52 @@ class DocumentUpload(Base):
         Index('idx_document_uploads_group_id', 'document_group_id'),
     )
 
+class GeneratedDocument(Base):
+    """Track generated documents and their metadata"""
+    __tablename__ = "generated_documents"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    # Document Group ID (foreign key reference to document_group_id in DocumentUpload table)
+    document_group_id = Column(String(100), nullable=False)
+    
+    # Document Information
+    document_type = Column(String(100), nullable=False)  # e.g., 'merged_pdf', 'extracted_data', 'summary'
+    s3_path = Column(String(500), nullable=False)  # S3 key/path for the generated document
+    
+    # Timestamps
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    
+    # Performance Indexes
+    __table_args__ = (
+        Index('idx_generated_documents_group_id', 'document_group_id'),
+        Index('idx_generated_documents_type', 'document_type'),
+        Index('idx_generated_documents_created_at', 'created_at'),
+    )
+
+
+class Templates(Base):
+    """Template table for storing PDF templates"""
+    __tablename__ = "templates"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, unique=True)
+    description = Column(Text, nullable=True)
+    category = Column(String(100), nullable=False)
+    s3_path = Column(String(500), nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    
+    # Performance Indexes
+    __table_args__ = (
+        Index('idx_templates_name', 'name'),
+        Index('idx_templates_created_at', 'created_at'),
+    )
+
+
 class AuditLog(Base):
     """Enhanced audit trail for HIPAA compliance and security monitoring"""
     __tablename__ = "audit_logs"
