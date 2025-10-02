@@ -40,44 +40,15 @@ class PdfProcessor:
 
     
     def fill_purewick_resupply_agreement(self, pdf_path, extracted_data, output_path="filled_purewick.pdf"):
-        """
-        Fill the Purewick Resupply Agreement PDF with extracted data.
-        
-        Args:
-            pdf_path: Path to the PDF template
-            extracted_data: Dictionary containing extracted patient data
-            output_path: Path where the filled PDF will be saved
-        
-        Returns:
-            str: Path to the filled PDF file
-        """
         try:
             doc = fitz.open(pdf_path)
 
-            # Explicit mapping for ONLY 3 fields with proper error handling
             field_map = {
                 "full name": extracted_data.get("patient_information", {}).get("full_name", {}).get("value", ""),
                 "date of birth": extracted_data.get("patient_information", {}).get("date_of_birth", {}).get("value", ""),
                 "insurance id": extracted_data.get("insurance_billing", {}).get("mbi_or_medicaid_id", {}).get("value", ""),
             }
-            
-            print(f"🔍 Field mapping for Purewick template:")
-            for field_name, value in field_map.items():
-                print(f"   {field_name}: '{value}'")
 
-            # First, let's see what fields are available in the PDF
-            all_fields = []
-            for page in doc:
-                widgets = page.widgets()
-                if widgets:
-                    for w in widgets:
-                        if w.field_name:
-                            all_fields.append(w.field_name)
-            
-            print(f"📋 Available fields in Purewick PDF: {all_fields}")
-            print(f"📋 Purewick field mapping keys: {list(field_map.keys())}")
-
-            filled_count = 0
             for page in doc:
                 widgets = page.widgets()
                 if not widgets:
@@ -87,38 +58,77 @@ class PdfProcessor:
                         value = field_map[w.field_name]
                         if value:
                             w.field_value = str(value)
+                            try:
+                                w.field_flags = w.field_flags | 0x00000002  # ReadOnly flag
+                                w.field_display = 0  # Hide field display
+                            except:
+                                pass
                             w.update()
-                            filled_count += 1
-                            print(f"✅ Filled '{w.field_name}' with '{value}'")
-                    elif w.field_name:
-                        print(f"❌ No mapping found for Purewick field: '{w.field_name}'")
 
-            doc.save(output_path)
+            temp_path = output_path.replace('.pdf', '_temp.pdf')
+            doc.save(temp_path)
             doc.close()
-            print(f"PDF filled and saved as {output_path}")
+
+            self._convert_to_non_editable(temp_path, output_path)
+
+            import os
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+
             return output_path
 
         except Exception as e:
-            print(f"Error filling PDF: {e}")
             raise e
 
-    def fill_non_medicare_dme_intake_form(self, pdf_path, extracted_data, output_path="filled_generic.pdf"):
-        """
-        Fill a generic PDF template with extracted data.
-        This function attempts to map common field names to extracted data.
-        
-        Args:
-            pdf_path: Path to the PDF template
-            extracted_data: Dictionary containing extracted patient data
-            output_path: Path where the filled PDF will be saved
-        
-        Returns:
-            str: Path to the filled PDF file
-        """
+    def fill_cgm_resupply_agreement_form(self, pdf_path, extracted_data, output_path="filled_cgm_resupply_agreement.pdf"):
         try:
             doc = fitz.open(pdf_path)
 
-            # Generic field mapping - maps common PDF field names to extracted data
+            field_map = {
+                "full name": extracted_data.get("patient_information", {}).get("full_name", {}).get("value", ""),
+                "date of birth": extracted_data.get("patient_information", {}).get("date_of_birth", {}).get("value", ""),
+                "insurance id": extracted_data.get("insurance_billing", {}).get("mbi_or_medicaid_id", {}).get("value", ""),
+            }
+
+            for page in doc:
+                widgets = page.widgets()
+                if not widgets:
+                    continue
+                for w in widgets:
+                    if w.field_name in field_map:
+                        value = field_map[w.field_name]
+                        if value:
+                            w.field_value = str(value)
+                            try:
+                                w.field_flags = w.field_flags | 0x00000002  # ReadOnly flag
+                                w.field_display = 0  # Hide field display
+                            except:
+                                pass
+                            w.update()
+
+            temp_path = output_path.replace('.pdf', '_temp.pdf')
+            doc.save(temp_path)
+            doc.close()
+
+            self._convert_to_non_editable(temp_path, output_path)
+
+            import os
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+
+            return output_path
+
+        except Exception as e:
+            raise e
+
+    def fill_non_medicare_dme_intake_form(self, pdf_path, extracted_data, output_path="filled_non_medicare_dme_intake_form.pdf"):
+        try:
+            doc = fitz.open(pdf_path)
+
             field_map = {
                 # Patient Information
                 "full name": extracted_data.get("patient_information", {}).get("full_name", {}).get("value", ""),
@@ -159,17 +169,42 @@ class PdfProcessor:
                 if not widgets:
                     continue
                 for w in widgets:
-                    if w.field_name and w.field_name.lower() in field_map:
-                        value = field_map[w.field_name.lower()]
-                        if value:
-                            w.field_value = str(value)
-                            w.update()
-                            filled_count += 1
-                            print(f"✅ Filled '{w.field_name}' with '{value}'")
+                     if w.field_name and w.field_name.lower() in field_map:
+                         value = field_map[w.field_name.lower()]
+                         if value:
+                             w.field_value = str(value)
+                             
+                             # Try to hide field borders/placeholders
+                             try:
+                                 # Set field flags to hide borders
+                                 w.field_flags = w.field_flags | 0x00000002  # ReadOnly flag
+                                 # Try to set appearance to hide borders
+                                 w.field_display = 0  # Hide field display
+                             except:
+                                 pass
+                             
+                             w.update()
+                             filled_count += 1
+                             print(f"✅ Filled '{w.field_name}' with '{value}'")
 
-            doc.save(output_path)
+            # Save the filled PDF first
+            print(f"💾 Saving filled PDF...")
+            temp_path = output_path.replace('.pdf', '_temp.pdf')
+            doc.save(temp_path)
             doc.close()
-            print(f"PDF filled and saved as {output_path}. Filled {filled_count} fields.")
+            
+            # Convert to non-editable by rendering to images
+            print(f"🔒 Converting to non-editable format...")
+            self._convert_to_non_editable(temp_path, output_path)
+            
+            # Clean up temp file
+            import os
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+            
+            print(f"✅ PDF filled and made non-editable! Filled {filled_count} fields.")
             return output_path
 
         except Exception as e:
@@ -288,17 +323,42 @@ class PdfProcessor:
                         
                         if value:
                             w.field_value = str(value)
+                            
+                            # Try to hide field borders/placeholders
+                            try:
+                                # Set field flags to hide borders
+                                w.field_flags = w.field_flags | 0x00000002  # ReadOnly flag
+                                # Try to set appearance to hide borders
+                                w.field_display = 0  # Hide field display
+                            except:
+                                pass
+                            
                             w.update()
                             filled_count += 1
                             print(f"✅ Filled '{w.field_name}' with '{value}'")
                     elif w.field_name:
                         print(f"❌ No mapping found for field: '{w.field_name}'")
 
-            doc.save(output_path)
+            # Save the filled PDF first
+            print(f"💾 Saving filled PDF...")
+            temp_path = output_path.replace('.pdf', '_temp.pdf')
+            doc.save(temp_path)
             doc.close()
-            print(f"PDF filled and saved as {output_path}. Filled {filled_count} fields.")
-            return output_path
             
+            # Convert to non-editable by rendering to images
+            print(f"🔒 Converting to non-editable format...")
+            self._convert_to_non_editable(temp_path, output_path)
+            
+            # Clean up temp file
+            import os
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+            
+            print(f"✅ PDF filled and made non-editable! Filled {filled_count} fields.")
+            return output_path
+
         except Exception as e:
             print(f"Error filling comprehensive PDF: {e}")
             raise e
@@ -358,6 +418,52 @@ class PdfProcessor:
                     address_parts.append(value)
         
         return " ".join(address_parts) if address_parts else ""
+
+    def _convert_to_non_editable(self, input_path: str, output_path: str, dpi: int = 150) -> None:
+        """
+        Convert filled PDF to non-editable by rendering each page as an image.
+        This completely removes all form fields and makes the PDF truly read-only.
+        
+        Args:
+            input_path: Path to the filled PDF
+            output_path: Path where the non-editable PDF will be saved
+            dpi: Resolution for rendering (150 is good quality, default)
+        """
+        try:
+            # Open the filled PDF
+            filled_doc = fitz.open(input_path)
+            
+            # Create a new empty PDF
+            output_doc = fitz.open()
+            
+            # Convert each page to image and add to new PDF
+            for page_num in range(len(filled_doc)):
+                page = filled_doc[page_num]
+                
+                # Render page to high-quality image
+                pix = page.get_pixmap(dpi=dpi)
+                
+                # Create new page with same dimensions
+                new_page = output_doc.new_page(
+                    width=page.rect.width,
+                    height=page.rect.height
+                )
+                
+                # Insert the rendered image
+                new_page.insert_image(page.rect, pixmap=pix)
+            
+            # Save the non-editable PDF
+            output_doc.save(output_path)
+            output_doc.close()
+            filled_doc.close()
+            
+            print(f"✅ Converted to non-editable image-based PDF")
+            
+        except Exception as e:
+            print(f"⚠️ Error converting to non-editable: {e}")
+            # If conversion fails, just copy the filled PDF
+            import shutil
+            shutil.copy(input_path, output_path)
 
 if __name__ == "__main__":
     PDF_PATH = "/content/dbd994f3-32d4-4d88-b991-22075124f480.pdf"  # Replace with your actual PDF file path

@@ -81,6 +81,17 @@ def fill_pdf_templates(json_result, group_id, templates, db_session):
                             json_result, 
                             output_pdf_path
                         )
+                    elif "cgm resupply" in temp.name.lower():
+                        logger.info("Using CGM resupply agreement filling function")
+                        filled_pdf_path = pdf_processor.fill_cgm_resupply_agreement_form(
+                            temp_pdf_path, 
+                            json_result, 
+                            output_pdf_path
+                        )
+                    elif "Payment Authorization Form" or "Patient Service Agreement" or "Ongoing Rental Agreement" or "Patient Handout" or "Patient Notes" or "Equipment Warranty Information" or "Medicare Capped Rental" in temp.name:
+                        # Return the PDF as it is from the s3 bucket
+                        filled_pdf_path = temp_pdf_path
+
                     else:
                         logger.info("Using comprehensive PDF filling function")
                         # Use the comprehensive filling function for all other templates
@@ -457,6 +468,8 @@ async def preview_document(
                 media_type="application/pdf",
                 headers={
                     "Content-Disposition": f"inline; filename={filename}",
+                    "Content-Security-Policy": "default-src 'self'",
+                    "X-Content-Type-Options": "nosniff",
                     "Cache-Control": "no-cache, no-store, must-revalidate",
                     "Pragma": "no-cache",
                     "Expires": "0"
