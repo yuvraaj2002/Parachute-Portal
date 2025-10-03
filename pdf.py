@@ -153,7 +153,151 @@ results = {
   }
 }
 
-pdf_path = "/Users/yuvrajsingh/Documents/AI Development/Freelance/Parachute_Portal/docs/Generate_Pdfs/Purewick_Resupply_Agreement_OHC_Template.pdf"
+#pdf_path = "/Users/yuvrajsingh/Documents/AI Development/Freelance/Parachute_Portal/docs/Generate_Pdfs/Purewick_Resupply_Agreement_OHC_Template.pdf"
+
+def list_editable_fields(pdf_path):
+    """
+    Print all editable form field names from a PDF document.
+    """
+    try:
+        doc = fitz.open(pdf_path)
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            widgets = page.widgets()
+            if widgets:
+                for widget in widgets:
+                    if widget.field_name:
+                        print(widget.field_name)
+        doc.close()
+    except Exception as e:
+        print(f"Error reading PDF: {str(e)}")
+
+def _get_full_address(address_dict):
+    """Helper method to create full address string from address dictionary"""
+    if not isinstance(address_dict, dict):
+        return ""
+    
+    address_parts = []
+    components = ['street', 'city', 'state', 'zip']
+    for component in components:
+        if component in address_dict:
+            value = address_dict[component]
+            if isinstance(value, dict) and "value" in value:
+                val = value["value"]
+                if val:  # Only add non-empty values
+                    address_parts.append(val)
+            elif isinstance(value, str) and value:  # Only add non-empty strings
+                address_parts.append(value)
+    
+    return " ".join(address_parts) if address_parts else ""
+
+def _convert_to_non_editable(input_path: str, output_path: str, dpi: int = 150) -> None:
+    """
+    Convert filled PDF to non-editable by rendering each page as an image.
+    This completely removes all form fields and makes the PDF truly read-only.
+    """
+    try:
+        # Open the filled PDF
+        filled_doc = fitz.open(input_path)
+        
+        # Create a new empty PDF
+        output_doc = fitz.open()
+        
+        # Convert each page to image and add to new PDF
+        for page_num in range(len(filled_doc)):
+            page = filled_doc[page_num]
+            
+            # Render page to high-quality image
+            pix = page.get_pixmap(dpi=dpi)
+            
+            # Create new page with same dimensions
+            new_page = output_doc.new_page(
+                width=page.rect.width,
+                height=page.rect.height
+            )
+            
+            # Insert the rendered image
+            new_page.insert_image(page.rect, pixmap=pix)
+        
+        # Save the non-editable PDF
+        output_doc.save(output_path)
+        output_doc.close()
+        filled_doc.close()
+        
+        print(f"✅ Converted to non-editable image-based PDF")
+        
+    except Exception as e:
+        print(f"⚠️ Error converting to non-editable: {e}")
+        # If conversion fails, just copy the filled PDF
+        import shutil
+        shutil.copy(input_path, output_path)
+
+def fill_patient_financial_responsibilty_template(pdf_path, extracted_data, output_path="filled_patient_financial_responsibilty_template.pdf"):
+    """Standalone function to fill Patient Financial Responsibility Template"""
+    try:
+        doc = fitz.open(pdf_path)
+
+        # Comprehensive field mapping for Patient Financial Responsibility Template
+        field_map = {
+            # Patient Information
+            "full name": extracted_data.get("patient_information", {}).get("full_name", {}).get("value", ""),
+            "date of birth": extracted_data.get("patient_information", {}).get("date_of_birth", {}).get("value", ""),
+            "address": _get_full_address(extracted_data.get("patient_information", {}).get("address", {})),
+            "phone": extracted_data.get("patient_information", {}).get("phone_numbers", [{}])[0].get("value", ""),
+            
+            # Insurance Information
+            "primary insurance": extracted_data.get("insurance_billing", {}).get("primary_payer", {}).get("value", ""),
+            "member id": extracted_data.get("insurance_billing", {}).get("policy_member_id", {}).get("value", ""),
+            "group": extracted_data.get("insurance_billing", {}).get("group_number", {}).get("value", ""),
+            "secondary insurance": extracted_data.get("insurance_billing", {}).get("secondary_insurance", {}).get("value", ""),
+        }
+
+        # Fill the form fields - using exact matching like CGM function
+        filled_count = 0
+        for page in doc:
+            widgets = page.widgets()
+            if not widgets:
+                continue
+            for w in widgets:
+                if w.field_name in field_map:
+                    value = field_map[w.field_name]
+                    if value:
+                        w.field_value = str(value)
+                        try:
+                            w.field_flags = w.field_flags | 0x00000002  # ReadOnly flag
+                            w.field_display = 0  # Hide field display
+                        except:
+                            pass
+                        w.update()
+                        filled_count += 1
+                        print(f"✅ Filled '{w.field_name}' with '{value}'")
+                    else:
+                        print(f"⚠️ No value for field '{w.field_name}'")
+                else:
+                    print(f"❌ No mapping for field: '{w.field_name}'")
+        
+        print(f"📊 Total fields filled: {filled_count}")
+
+        # Save the filled PDF first
+        temp_path = output_path.replace('.pdf', '_temp.pdf')
+        doc.save(temp_path)
+        doc.close()
+
+        # Convert to non-editable by rendering to images
+        _convert_to_non_editable(temp_path, output_path)
+
+        # Clean up temp file
+        import os
+        try:
+            os.unlink(temp_path)
+        except:
+            pass
+
+        return output_path
+
+    except Exception as e:
+        print(f"Error filling Patient Financial Responsibility PDF: {e}")
+        raise e
 
 def fill_purewick_resupply_agreement(pdf_path, extracted_data, output_path="filled_purewick.pdf"):
     try:
@@ -187,4 +331,12 @@ def fill_purewick_resupply_agreement(pdf_path, extracted_data, output_path="fill
 
 # Example usage
 if __name__ == "__main__":
-    fill_purewick_resupply_agreement(pdf_path, results)
+    # Example 1: List all editable fields in a PDF
+    pdf_path = "/Users/yuvrajsingh/Documents/AI Development/Freelance/Parachute_Portal/docs/Generate_Pdfs/Non medicare/Patient Financial Responsibility Template.pdf"
+    # fields = list_editable_fields(pdf_path)
+    
+    # print("\n" + "=" * 60)
+    # print("FILLING PATIENT FINANCIAL RESPONSIBILITY PDF")
+    # print("=" * 60)
+    # Example 2: Fill the Patient Financial Responsibility PDF with data
+    fill_patient_financial_responsibilty_template(pdf_path, results)

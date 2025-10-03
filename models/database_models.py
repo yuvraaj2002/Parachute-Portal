@@ -141,7 +141,7 @@ class Templates(Base):
     __tablename__ = "templates"
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(100), nullable=False, unique=True)
+    name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
     category = Column(String(100), nullable=False)
     s3_path = Column(String(500), nullable=True)

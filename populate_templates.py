@@ -80,17 +80,7 @@ def add_template_interactive():
     db = SessionLocal()
     
     try:
-        # Check if template with this name already exists
-        existing_template = db.query(Templates).filter(
-            Templates.name == name
-        ).first()
-        
-        if existing_template:
-            print(f"\n❌ Template '{name}' already exists!")
-            print(f"   ID: {existing_template.id}")
-            print(f"   Category: {existing_template.category}")
-            print(f"   S3 Path: {existing_template.s3_path}")
-            return
+        # Note: Allowing duplicate names as per user requirement
         
         # Create new template
         template = Templates(

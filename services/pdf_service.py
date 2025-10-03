@@ -82,6 +82,64 @@ class PdfProcessor:
         except Exception as e:
             raise e
 
+    def fill_patient_financial_responsibilty_template(self, pdf_path, extracted_data, output_path="filled_patient_financial_responsibilty_template.pdf"):
+        try:
+            doc = fitz.open(pdf_path)
+
+            # Comprehensive field mapping for Patient Financial Responsibility Template
+            field_map = {
+                # Patient Information
+                "full name": extracted_data.get("patient_information", {}).get("full_name", {}).get("value", ""),
+                "date of birth": extracted_data.get("patient_information", {}).get("date_of_birth", {}).get("value", ""),
+                "address": self._get_full_address(extracted_data.get("patient_information", {}).get("address", {})),
+                "phone": extracted_data.get("patient_information", {}).get("phone_numbers", [{}])[0].get("value", ""),
+                
+                # Insurance Information
+                "primary insurance": extracted_data.get("insurance_billing", {}).get("primary_payer", {}).get("value", ""),
+                "member id": extracted_data.get("insurance_billing", {}).get("policy_member_id", {}).get("value", ""),
+                "group": extracted_data.get("insurance_billing", {}).get("group_number", {}).get("value", ""),
+                "secondary insurance": extracted_data.get("insurance_billing", {}).get("secondary_insurance", {}).get("value", ""),
+            }
+
+            # Fill the form fields - using exact matching like CGM function
+            filled_count = 0
+            for page in doc:
+                widgets = page.widgets()
+                if not widgets:
+                    continue
+                for w in widgets:
+                    if w.field_name in field_map:
+                        value = field_map[w.field_name]
+                        if value:
+                            w.field_value = str(value)
+                            try:
+                                w.field_flags = w.field_flags | 0x00000002  # ReadOnly flag
+                                w.field_display = 0  # Hide field display
+                            except:
+                                pass
+                            w.update()
+                            filled_count += 1
+
+            # Save the filled PDF first
+            temp_path = output_path.replace('.pdf', '_temp.pdf')
+            doc.save(temp_path)
+            doc.close()
+            
+            # Convert to non-editable by rendering to images
+            self._convert_to_non_editable(temp_path, output_path)
+            
+            # Clean up temp file
+            import os
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+            
+            return output_path
+
+        except Exception as e:
+            raise e
+
     def fill_cgm_resupply_agreement_form(self, pdf_path, extracted_data, output_path="filled_cgm_resupply_agreement.pdf"):
         try:
             doc = fitz.open(pdf_path)
