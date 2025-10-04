@@ -4,7 +4,7 @@ import json
 import logging
 import uuid
 from typing import Dict, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Query, Request
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
@@ -28,14 +28,16 @@ from services.aws_service import FileHandler
 from services.celery_service import celery_app, multi_pdf_processing_task
 from services.redis_service import RedisService
 from services.pdf_service import PdfProcessor
+from services.db_service import DatabaseService
 
 logger = logging.getLogger(__name__)
+redis_service = RedisService()
 
 try:
-    MistralPDFExtractor = PdfProcessor()
+    pdf_processor_instance = PdfProcessor()
 except ImportError as e:
-    logger.warning(f"Could not import MistralPDFExtractor: {e}")
-    MistralPDFExtractor = None
+    logger.warning(f"Could not import PdfProcessor: {e}")
+    pdf_processor_instance = None
 logger.setLevel(logging.INFO)
 if not logger.hasHandlers():
     handler = logging.StreamHandler()
@@ -101,7 +103,8 @@ async def check_celery_health():
 async def analyze_medical_doc(
     files: list[UploadFile] = File(...),   
     current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    request: Request = None
 ):
     """
     Analyze one or more medical documents using AI.
@@ -222,6 +225,17 @@ async def analyze_medical_doc(
             raise HTTPException(status_code=500, detail=f"Failed to queue multi-document processing task: {str(e)}")
 
         logger.info(f"Multi-document upload initiated successfully for user {current_user.id}, {len(files)} files")
+        
+        # Create audit log for document analysis initiation
+        DatabaseService.create_audit_log(
+            db=db,
+            user_id=current_user.id,
+            category="document_processing",
+            action_details=f"User {current_user.email} initiated document analysis for {len(files)} PDF files: {[f.filename for f in files]}. Group ID: {group_id}, Task ID: {task_id}",
+            resource_type="document_upload",
+            request=request
+        )
+        
         return {
             "message": f"{len(files)} PDF(s) uploaded successfully and processing started",
             "group_id": group_id,
@@ -247,31 +261,109 @@ async def analyze_medical_doc(
 
 @router.get("/document-groups")
 async def get_user_document_groups(
+    page: int = Query(1, ge=1, description="Page number (starts from 1)"),
+    page_size: int = Query(10, ge=1, le=50, description="Number of items per page (max 50)"),
     current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    request: Request = None
 ):
     """
-    Get all document groups for the current user.
+    Get paginated document groups for the current user with caching.
+    
+    Args:
+        page: Page number (starts from 1)
+        page_size: Number of items per page (max 50)
+        current_user: Current authenticated user
+        db: Database session
+    
+    Returns:
+        Paginated list of document groups with metadata
     """
     try:
-        logger.info(f"Retrieving document groups for user {current_user.id}")
-
-        # Query all document groups for the current user
-        # Group by document_group_id and get unique groups
+        import json  # Import json at the function level
         
-        # Get unique group IDs for this user
-        group_ids = db.query(distinct(DocumentUpload.document_group_id)).filter(
+        # Create cache key based on user ID and pagination parameters
+        cache_key = f"doc_groups:{current_user.id}:{page}:{page_size}"
+        logger.info(f"Cache key: {cache_key}")
+        logger.info(f"Redis connected: {redis_service.is_connected()}")
+        
+        # Check if data exists in cache
+        cached_data = redis_service.get_key(cache_key)
+        logger.info(f"Cache lookup result: {'HIT' if cached_data else 'MISS'}")
+        
+        if cached_data:
+            logger.info(f"CACHE HIT! Returning cached document groups for user {current_user.id}, page {page}")
+            logger.info(f"Cache data length: {len(cached_data)} characters")
+            try:
+                cached_response = json.loads(cached_data)
+                logger.info(f"Cached response contains {len(cached_response.get('document_groups', []))} document groups")
+                return cached_response
+            except json.JSONDecodeError as e:
+                logger.error(f"Error parsing cached JSON data: {e}")
+                # Fall through to database query if cached data is corrupted
+        
+        logger.info(f"Retrieving document groups for user {current_user.id}, page {page}, size {page_size}")
+        
+        # First, get total count of unique document groups for this user
+        total_groups_query = db.query(distinct(DocumentUpload.document_group_id)).filter(
             DocumentUpload.user_id == current_user.id,
             DocumentUpload.document_group_id.isnot(None)
-        ).all()
+        )
+        total_groups = len(total_groups_query.all())
         
-        group_ids = [g[0] for g in group_ids if g[0]]  # Extract from tuples and filter None
+        # Calculate pagination metadata
+        total_pages = (total_groups + page_size - 1) // page_size if total_groups > 0 else 0
+        offset = (page - 1) * page_size
         
-        logger.info(f"Found {len(group_ids)} document groups for user {current_user.id}")
+        logger.info(f"Found {total_groups} total document groups for user {current_user.id}")
+        
+        if total_groups == 0:
+            # No document groups found
+            response_data = {
+                "message": "Document groups retrieved successfully",
+                "pagination": {
+                    "current_page": page,
+                    "page_size": page_size,
+                    "total_groups": 0,
+                    "total_pages": 0,
+                    "has_next_page": False,
+                    "has_previous_page": False,
+                    "next_page": None,
+                    "previous_page": None
+                },
+                "document_groups": []
+            }
+            
+            # Cache empty response
+            redis_service.set_key(cache_key, json.dumps(response_data), expire_seconds=30)
+            return response_data
+        
+        # Get paginated unique group IDs with their latest creation date
+        # First, get all group IDs with their latest created_at date
+        group_ids_with_dates = (
+            db.query(
+                DocumentUpload.document_group_id,
+                func.max(DocumentUpload.created_at).label('latest_created_at')
+            )
+            .filter(
+                DocumentUpload.user_id == current_user.id,
+                DocumentUpload.document_group_id.isnot(None)
+            )
+            .group_by(DocumentUpload.document_group_id)
+            .order_by(func.max(DocumentUpload.created_at).desc())
+            .offset(offset)
+            .limit(page_size)
+            .all()
+        )
+        
+        # Extract group IDs from results
+        paginated_group_ids = [row[0] for row in group_ids_with_dates]
+        
+        logger.info(f"Retrieved {len(paginated_group_ids)} group IDs for page {page}")
 
-        # Get details for each group
+        # Get details for each paginated group
         document_groups = []
-        for group_id in group_ids:
+        for group_id in paginated_group_ids:
             # Get all documents in this group
             documents = db.query(DocumentUpload).filter(
                 DocumentUpload.user_id == current_user.id,
@@ -304,7 +396,6 @@ async def get_user_document_groups(
                     if first_doc.extracted_text:
                         # Check if it's JSON (merged result) or just OCR text
                         try:
-                            import json
                             json.loads(first_doc.extracted_text)
                             merged_json_result = first_doc.extracted_text
                         except json.JSONDecodeError:
@@ -342,15 +433,47 @@ async def get_user_document_groups(
                     "merged_json_result": merged_json_result[:1000] + "..." if merged_json_result and len(merged_json_result) > 1000 else merged_json_result
                 })
         
-        # Sort by creation date (newest first)
-        document_groups.sort(key=lambda x: x["created_at"], reverse=True)
+        # Document groups are already sorted by newest first from the subquery
         
-        logger.info(f"Document groups for user {current_user.id} retrieved successfully")
-        return {
+        # Prepare response with pagination metadata
+        response_data = {
             "message": "Document groups retrieved successfully",
-            "total_groups": len(document_groups),
+            "pagination": {
+                "current_page": page,
+                "page_size": page_size,
+                "total_groups": total_groups,
+                "total_pages": total_pages,
+                "has_next_page": page < total_pages,
+                "has_previous_page": page > 1,
+                "next_page": page + 1 if page < total_pages else None,
+                "previous_page": page - 1 if page > 1 else None
+            },
             "document_groups": document_groups
         }
+        
+        # Cache the response for 60 seconds
+        logger.info(f"💾 Setting cache for user {current_user.id} with key: {cache_key}")
+        logger.info(f"📊 Response data size: {len(json.dumps(response_data))} characters")
+        logger.info(f"📋 Response contains {len(response_data.get('document_groups', []))} document groups")
+        
+        cache_success = redis_service.set_key(cache_key, json.dumps(response_data), expire_seconds=60)
+        logger.info(f"✅ Cache set result: {'SUCCESS' if cache_success else 'FAILED'}")
+        if cache_success:
+            logger.info(f"⏰ Cache will expire in 60 seconds (key: {cache_key})")
+        
+        logger.info(f"Document groups for user {current_user.id} retrieved successfully (page {page}/{total_pages})")
+        
+        # Create audit log for document groups access
+        DatabaseService.create_audit_log(
+            db=db,
+            user_id=current_user.id,
+            category="data_access",
+            action_details=f"User {current_user.email} accessed document groups list (page {page}/{total_pages}, {total_groups} total groups)",
+            resource_type="document_groups",
+            request=request
+        )
+        
+        return response_data
         
     except Exception as e:
         logger.error(f"Error retrieving document groups for user {getattr(current_user, 'id', 'unknown')}: {str(e)}", exc_info=True)
@@ -360,7 +483,8 @@ async def get_user_document_groups(
 async def get_merged_json_result(
     group_id: str,
     current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    request: Request = None
 ):
     """
     Get the full merged JSON result for a specific document group.
@@ -407,6 +531,17 @@ async def get_merged_json_result(
         # Parse and return the merged JSON
         merged_json = json.loads(merged_doc.extracted_text)
         logger.info(f"Merged JSON result retrieved for group {group_id} from document {merged_doc.id}")
+        
+        # Create audit log for merged result access
+        DatabaseService.create_audit_log(
+            db=db,
+            user_id=current_user.id,
+            category="data_access",
+            action_details=f"User {current_user.email} accessed merged JSON result for document group {group_id} ({total_docs} documents)",
+            resource_type="merged_result",
+            request=request
+        )
+        
         return {
             "message": "Merged JSON result retrieved successfully",
             "group_id": group_id,
@@ -421,8 +556,12 @@ async def get_merged_json_result(
         raise HTTPException(status_code=500, detail=f"Error retrieving merged JSON result: {str(e)}")
 
 @router.get("/stream-status/{task_id}")
-async def stream_processing_status(task_id: str):
+async def stream_processing_status(task_id: str, request: Request = None):
     """SSE endpoint to stream processing status from Redis"""
+    
+    # Log stream status access (no audit log needed for anonymous streaming)
+    logger.info(f"Stream status accessed for task: {task_id}")
+    
     async def event_generator():
         redis_service = RedisService()
         last_progress = -1

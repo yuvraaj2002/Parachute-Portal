@@ -3,7 +3,8 @@ import os
 import json
 import logging
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from rich import print
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -19,6 +20,8 @@ from services.auth_service import get_current_active_user
 from services.openai_service import LLMService
 from services.pdf_service import PdfProcessor
 from services.aws_service import file_handler
+from services.redis_service import RedisService
+from services.db_service import DatabaseService
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -31,149 +34,14 @@ if not logger.hasHandlers():
 router = APIRouter(prefix="/templates", tags=["Templates"])
 openai_service = LLMService()
 pdf_processor = PdfProcessor()
-
-
-def fill_pdf_templates(json_result, group_id, templates, db_session):
-    """
-    Fill PDF templates with extracted data using PyMuPDF (fitz).
-    
-    Args:
-        json_result: Dictionary containing extracted patient data
-        group_id: Unique identifier for the document group
-        templates: List of template objects from database
-        db_session: Database session for creating GeneratedDocument entries
-    
-    Returns:
-        List of dictionaries containing S3 information for generated documents
-    """
-    try:
-        import tempfile
-        
-        # Generate PDFs for requested templates
-        generated_documents = []            
-        for temp in templates:
-            try:
-                logger.info(f"Processing template: {temp.name}")
-                logger.info(f"Template S3 path: {temp.s3_path}")
-                
-                # Download PDF template from S3 using the dedicated function
-                temp_pdf_path = file_handler.download_pdf_template_from_s3(temp.s3_path)
-                logger.info(f"Downloaded template PDF from S3 to: {temp_pdf_path}")
-                
-                # Create output path for filled PDF
-                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as output_file:
-                    output_pdf_path = output_file.name
-                
-                # Function mapping
-                logger.info(f"Template name: '{temp.name}' - checking for template type")
-                try:
-                    if "purewick" in temp.name.lower():
-                        logger.info("Using Purewick resupply agreement filling function")
-                        filled_pdf_path = pdf_processor.fill_purewick_resupply_agreement(
-                            temp_pdf_path, 
-                            json_result, 
-                            output_pdf_path
-                        )
-                    elif "non medicare" in temp.name.lower():
-                        logger.info("Using Non Medicare DME intake form filling function")
-                        filled_pdf_path = pdf_processor.fill_non_medicare_dme_intake_form(
-                            temp_pdf_path, 
-                            json_result, 
-                            output_pdf_path
-                        )
-                    elif "cgm resupply" in temp.name.lower():
-                        logger.info("Using CGM resupply agreement filling function")
-                        filled_pdf_path = pdf_processor.fill_cgm_resupply_agreement_form(
-                            temp_pdf_path, 
-                            json_result, 
-                            output_pdf_path
-                        )
-                    elif any(x in temp.name for x in ["Payment Authorization Form", "Patient Service Agreement", "Ongoing Rental Agreement", "Patient Handout", "Patient Notes", "Equipment Warranty Information", "Medicare Capped Rental"]):
-                        # Return the PDF as it is from the s3 bucket
-                        filled_pdf_path = temp_pdf_path
-
-                    elif "patient financial responsibility" in temp.name.lower():
-                        logger.info("Using Patient Financial Responsibility filling function")
-                        filled_pdf_path = pdf_processor.fill_patient_financial_responsibilty_template(
-                            temp_pdf_path, 
-                            json_result, 
-                            output_pdf_path
-                        )
-                    else:
-                        logger.info("Using comprehensive PDF filling function")
-                        # Use the comprehensive filling function for all other templates
-                        filled_pdf_path = pdf_processor.fill_comprehensive_pdf_template(
-                            temp_pdf_path, 
-                            json_result, 
-                            output_pdf_path
-                        )
-                    logger.info(f"Successfully filled PDF: {filled_pdf_path}")
-                except Exception as e:
-                    logger.error(f"Error filling PDF template {temp.name}: {e}")
-                    continue
-                
-                # Upload filled PDF to S3 and create database entry
-                try:
-                    # Upload to S3
-                    upload_result = file_handler.upload_generated_pdf_to_s3(
-                        filled_pdf_path, group_id, temp.name
-                    )
-                    
-                    # Create database entry if db_session is provided
-                    if db_session:
-                        generated_doc = GeneratedDocument(
-                            document_group_id=group_id,
-                            document_type=f"filled_{temp.name.lower().replace(' ', '_')}",
-                            s3_path=upload_result["s3_key"],
-                            created_at=datetime.now(),
-                            updated_at=datetime.now()
-                        )
-                        db_session.add(generated_doc)
-                        db_session.commit()
-                        db_session.refresh(generated_doc)
-                        
-                        logger.info(f"Created database entry for generated document: {generated_doc.id}")
-                    
-                    logger.info(f"Successfully uploaded filled PDF to S3: {upload_result['s3_url']}")
-                    
-                    # Add to results with S3 information
-                    generated_documents.append({
-                        "template_name": temp.name,
-                        "s3_key": upload_result["s3_key"],
-                        "s3_url": upload_result["s3_url"],
-                        "file_id": upload_result["file_id"]
-                    })
-                    
-                except Exception as e:
-                    logger.error(f"Error uploading filled PDF to S3 or creating database entry: {e}")
-                    # Continue with other PDFs even if one fails
-                    
-            except Exception as e:
-                logger.error(f"Error processing template {temp.name}: {e}")
-                # Continue with other templates even if one fails
-                continue
-                
-            finally:
-                # Clean up temporary files
-                try:
-                    if temp_pdf_path and os.path.exists(temp_pdf_path):
-                        os.unlink(temp_pdf_path)
-                    if 'output_pdf_path' in locals() and output_pdf_path and os.path.exists(output_pdf_path):
-                        os.unlink(output_pdf_path)
-                except Exception as e:
-                    logger.warning(f"Could not delete temporary files: {e}")
-        
-        return generated_documents
-        
-    except Exception as e:
-        logger.error(f"Error filling PDF templates: {e}")
-        raise e
+redis_service = RedisService()
 
 
 @router.get("/")
 async def get_templates(
     current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    request: Request = None
 ):
     """
     Get all available templates.
@@ -182,7 +50,15 @@ async def get_templates(
         List of templates with id, name, description, and category
     """
     try:
-        logger.info(f"Retrieving templates for user {current_user.id}")
+
+        # Checking if the data exists in the cache
+        cache_key = "templates"
+        cached_data = redis_service.get_key(cache_key)
+        if cached_data:
+            logger.info("Returning the data from cache")
+            return json.loads(cached_data)
+        
+        logger.info(f"Retrieving templates")
         
         # Query all templates
         templates = db.query(Templates).all()
@@ -197,15 +73,33 @@ async def get_templates(
                 "category": template.category
             })
         
-        logger.info(f"Retrieved {len(template_list)} templates for user {current_user.id}")
-        return {
+        logger.info(f"Retrieved {len(template_list)} templates")
+
+        # Prepare the complete response
+        response_data = {
             "message": "Templates retrieved successfully",
             "total_templates": len(template_list),
             "templates": template_list
         }
+
+        # Storing the complete response in cache
+        logger.info("Storing the complete response data in cache")
+        redis_service.set_key(cache_key, json.dumps(response_data), expire_seconds=600)
+        
+        # Create audit log for templates access
+        DatabaseService.create_audit_log(
+            db=db,
+            user_id=current_user.id,
+            category="data_access",
+            action_details=f"User {current_user.email} accessed templates list ({len(template_list)} templates)",
+            resource_type="templates",
+            request=request
+        )
+        
+        return response_data
         
     except Exception as e:
-        logger.error(f"Error retrieving templates for user {getattr(current_user, 'id', 'unknown')}: {str(e)}", exc_info=True)
+        logger.error(f"Error retrieving templates: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error retrieving templates: {str(e)}")
 
 
@@ -213,7 +107,8 @@ async def get_templates(
 async def generate_document(
     request: GenerateDocumentRequest,
     current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    http_request: Request = None
 ):
     """
     Generate PDF documents from templates using extracted patient data.
@@ -290,7 +185,7 @@ async def generate_document(
         logger.info(f"Processing {len(valid_templates)} valid PDF templates out of {len(templates)} requested")
         
         # Initialize PDF processor and fill PDFs using PyMuPDF
-        generated_documents = fill_pdf_templates(json_result, group_id, valid_templates, db)
+        generated_documents = pdf_processor.fill_pdf_templates(json_result, group_id, valid_templates, db)
 
         # Prepare response with S3 file information
         pdf_files = []
@@ -305,6 +200,17 @@ async def generate_document(
             })
 
         logger.info(f"Successfully generated {len(pdf_files)} PDFs for group {group_id}")
+        
+        # Create audit log for document generation
+        DatabaseService.create_audit_log(
+            db=db,
+            user_id=current_user.id,
+            category="document_processing",
+            action_details=f"User {current_user.email} generated {len(pdf_files)} PDF documents from {len(request.template_ids)} templates for group {group_id}. Templates: {request.template_ids}",
+            resource_type="document_generation",
+            request=http_request
+        )
+        
         return {
             "message": f"Successfully generated {len(pdf_files)} PDF documents",
             "group_id": group_id,
@@ -323,7 +229,8 @@ async def generate_document(
 async def download_document(
     file_id: str,
     current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    request: Request = None
 ):
     """
     Download a generated PDF file from S3.
@@ -385,6 +292,16 @@ async def download_document(
             
             # Extract filename from s3_path for download
             filename = os.path.basename(generated_doc.s3_path)
+            
+            # Create audit log for document download
+            DatabaseService.create_audit_log(
+                db=db,
+                user_id=current_user.id,
+                category="file_operations",
+                action_details=f"User {current_user.email} downloaded generated PDF document: {filename} (file_id: {file_id})",
+                resource_type="document_download",
+                request=request
+            )
             
             return StreamingResponse(
                 iterfile(),

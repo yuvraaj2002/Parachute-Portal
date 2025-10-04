@@ -117,14 +117,14 @@ def multi_pdf_processing_task(self, document_ids: list, s3_keys: list, user_id: 
         from services.aws_service import FileHandler
         from services.openai_service import LLMService
         from services.redis_service import RedisService
-        from services.pdf_service import MistralPDFExtractor
+        from services.pdf_service import PdfProcessor
         from datetime import datetime, UTC
         
         # Initialize services
         file_handler = FileHandler()
         llm_service = LLMService()
         redis_service = RedisService()
-        pdf_extractor = MistralPDFExtractor()
+        pdf_extractor = PdfProcessor()
         
         # Set initial status in Redis
         logger.info(f"Setting initial Redis status for multi-document task_id: {task_id}")
@@ -201,7 +201,7 @@ def multi_pdf_processing_task(self, document_ids: list, s3_keys: list, user_id: 
                     )
                     
                     # Step 1: Extract text from PDF using Mistral AI (OCR)
-                    logger.info(f"Step 1: OCR extraction from PDF {i+1} using MistralPDFExtractor")
+                    logger.info(f"Step 1: OCR extraction from PDF {i+1} using PdfProcessor")
                     try:
                         ocr_response = pdf_extractor.extract_text_from_pdf(decrypted_pdf_path)
                         

@@ -2,11 +2,15 @@ import os
 import base64
 import pypandoc
 import fitz  # PyMuPDF
+import tempfile
+import logging
 from datetime import datetime
 from mistralai import Mistral
 from config import settings
 from services.aws_service import file_handler
 from models.database_models import GeneratedDocument
+
+logger = logging.getLogger(__name__)
 
 class PdfProcessor:
     def __init__(self):
@@ -522,6 +526,140 @@ class PdfProcessor:
             # If conversion fails, just copy the filled PDF
             import shutil
             shutil.copy(input_path, output_path)
+
+    def fill_pdf_templates(self, json_result, group_id, templates, db_session):
+        """
+        Fill PDF templates with extracted data using PyMuPDF (fitz).
+        
+        Args:
+            json_result: Dictionary containing extracted patient data
+            group_id: Unique identifier for the document group
+            templates: List of template objects from database
+            db_session: Database session for creating GeneratedDocument entries
+        
+        Returns:
+            List of dictionaries containing S3 information for generated documents
+        """
+        try:
+            # Generate PDFs for requested templates
+            generated_documents = []            
+            for temp in templates:
+                try:
+                    logger.info(f"Processing template: {temp.name}")
+                    logger.info(f"Template S3 path: {temp.s3_path}")
+                    
+                    # Download PDF template from S3 using the dedicated function
+                    temp_pdf_path = file_handler.download_pdf_template_from_s3(temp.s3_path)
+                    logger.info(f"Downloaded template PDF from S3 to: {temp_pdf_path}")
+                    
+                    # Create output path for filled PDF
+                    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as output_file:
+                        output_pdf_path = output_file.name
+                    
+                    # Function mapping
+                    logger.info(f"Template name: '{temp.name}' - checking for template type")
+                    try:
+                        if "purewick" in temp.name.lower():
+                            logger.info("Using Purewick resupply agreement filling function")
+                            filled_pdf_path = self.fill_purewick_resupply_agreement(
+                                temp_pdf_path, 
+                                json_result, 
+                                output_pdf_path
+                            )
+                        elif "non medicare" in temp.name.lower():
+                            logger.info("Using Non Medicare DME intake form filling function")
+                            filled_pdf_path = self.fill_non_medicare_dme_intake_form(
+                                temp_pdf_path, 
+                                json_result, 
+                                output_pdf_path
+                            )
+                        elif "cgm resupply" in temp.name.lower():
+                            logger.info("Using CGM resupply agreement filling function")
+                            filled_pdf_path = self.fill_cgm_resupply_agreement_form(
+                                temp_pdf_path, 
+                                json_result, 
+                                output_pdf_path
+                            )
+                        elif any(x in temp.name for x in ["Payment Authorization Form", "Patient Service Agreement", "Ongoing Rental Agreement", "Patient Handout", "Patient Notes", "Equipment Warranty Information", "Medicare Capped Rental"]):
+                            # Return the PDF as it is from the s3 bucket
+                            filled_pdf_path = temp_pdf_path
+
+                        elif "patient financial responsibility" in temp.name.lower():
+                            logger.info("Using Patient Financial Responsibility filling function")
+                            filled_pdf_path = self.fill_patient_financial_responsibilty_template(
+                                temp_pdf_path, 
+                                json_result, 
+                                output_pdf_path
+                            )
+                        else:
+                            logger.info("Using comprehensive PDF filling function")
+                            # Use the comprehensive filling function for all other templates
+                            filled_pdf_path = self.fill_comprehensive_pdf_template(
+                                temp_pdf_path, 
+                                json_result, 
+                                output_pdf_path
+                            )
+                        logger.info(f"Successfully filled PDF: {filled_pdf_path}")
+                    except Exception as e:
+                        logger.error(f"Error filling PDF template {temp.name}: {e}")
+                        continue
+                    
+                    # Upload filled PDF to S3 and create database entry
+                    try:
+                        # Upload to S3
+                        upload_result = file_handler.upload_generated_pdf_to_s3(
+                            filled_pdf_path, group_id, temp.name
+                        )
+                        
+                        # Create database entry if db_session is provided
+                        if db_session:
+                            generated_doc = GeneratedDocument(
+                                document_group_id=group_id,
+                                document_type=f"filled_{temp.name.lower().replace(' ', '_')}",
+                                s3_path=upload_result["s3_key"],
+                                created_at=datetime.now(),
+                                updated_at=datetime.now()
+                            )
+                            db_session.add(generated_doc)
+                            db_session.commit()
+                            db_session.refresh(generated_doc)
+                            
+                            logger.info(f"Created database entry for generated document: {generated_doc.id}")
+                        
+                        logger.info(f"Successfully uploaded filled PDF to S3: {upload_result['s3_url']}")
+                        
+                        # Add to results with S3 information
+                        generated_documents.append({
+                            "template_name": temp.name,
+                            "s3_key": upload_result["s3_key"],
+                            "s3_url": upload_result["s3_url"],
+                            "file_id": upload_result["file_id"]
+                        })
+                        
+                    except Exception as e:
+                        logger.error(f"Error uploading filled PDF to S3 or creating database entry: {e}")
+                        # Continue with other PDFs even if one fails
+                        
+                except Exception as e:
+                    logger.error(f"Error processing template {temp.name}: {e}")
+                    # Continue with other templates even if one fails
+                    continue
+                    
+                finally:
+                    # Clean up temporary files
+                    try:
+                        if temp_pdf_path and os.path.exists(temp_pdf_path):
+                            os.unlink(temp_pdf_path)
+                        if 'output_pdf_path' in locals() and output_pdf_path and os.path.exists(output_pdf_path):
+                            os.unlink(output_pdf_path)
+                    except Exception as e:
+                        logger.warning(f"Could not delete temporary files: {e}")
+            
+            return generated_documents
+            
+        except Exception as e:
+            logger.error(f"Error filling PDF templates: {e}")
+            raise e
 
 if __name__ == "__main__":
     PDF_PATH = "/content/dbd994f3-32d4-4d88-b991-22075124f480.pdf"  # Replace with your actual PDF file path
