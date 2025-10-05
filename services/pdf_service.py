@@ -812,7 +812,7 @@ class PdfProcessor:
                                 json_result, 
                                 output_pdf_path
                             )
-                        elif "patient intake form" in temp.name.lower():
+                        elif "Patient Intake Form" in temp.name:
                             logger.info("Using Patient Intake Form filling function")
                             filled_pdf_path = self.fill_patient_intake_form(
                                 temp_pdf_path, 
