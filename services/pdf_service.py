@@ -187,6 +187,252 @@ class PdfProcessor:
         except Exception as e:
             raise e
 
+    def fill_patient_intake_form(self, pdf_path, extracted_data, output_path="filled_patient_intake_form.pdf"):
+        """
+        Fill the Patient Intake Form - Non Medicare Intake Form with extracted data.
+        
+        Maps the extracted data from the schema to the PDF form fields:
+        - last name, first name -> full_name
+        - address -> address (street)
+        - city -> address (city)
+        - zip -> address (zip)
+        - phone -> phone_numbers
+        - date of birth -> date_of_birth
+        - SSN -> ssn
+        - supply start date -> supply_start_date
+        - emergency name -> emergency_contact (name)
+        - emergency phone -> emergency_contact (phone)
+        - provider name -> provider_full_name
+        - npi number -> npi_number
+        - prescriber address -> clinic_address
+        - prescriber phone -> clinic_phone
+        - icd10 codes -> icd10_codes
+        - policy member id -> policy_member_id
+        - guarantor name -> guarantor (name)
+        - item description and services needed -> item_descriptions
+        - administrative date received -> internal_case_id (or date)
+        - full name -> full_name
+        - admission date -> onset_or_injury_date
+        - phone number -> phone_numbers
+        - item descriptions and hcpcs codes -> item_descriptions and hcpcs_codes
+        """
+        try:
+            doc = fitz.open(pdf_path)
+
+            # Helper function to safely get nested values
+            def safe_get(data, path, default=""):
+                """Safely navigate nested dictionary structure"""
+                try:
+                    keys = path.split('.')
+                    result = data
+                    for key in keys:
+                        if isinstance(result, dict) and key in result:
+                            result = result[key]
+                            if isinstance(result, dict) and "value" in result:
+                                result = result["value"]
+                        else:
+                            return default
+                    return result if result else default
+                except:
+                    return default
+
+            # Helper function to get first phone number
+            def get_first_phone(phone_list):
+                """Get the first phone number from the phone_numbers array"""
+                try:
+                    if isinstance(phone_list, list) and len(phone_list) > 0:
+                        phone = phone_list[0]
+                        if isinstance(phone, dict):
+                            return phone.get("value", phone.get("original_text", ""))
+                    return ""
+                except:
+                    return ""
+
+            # Helper function to get address components
+            def get_address_component(address_dict, component):
+                """Get specific address component"""
+                try:
+                    if isinstance(address_dict, dict) and component in address_dict:
+                        comp = address_dict[component]
+                        if isinstance(comp, dict) and "value" in comp:
+                            return comp["value"]
+                        return str(comp) if comp else ""
+                    return ""
+                except:
+                    return ""
+
+            # Helper function to format ICD10 codes
+            def format_icd10_codes(icd10_list):
+                """Format ICD10 codes into a readable string"""
+                try:
+                    if isinstance(icd10_list, list):
+                        codes = []
+                        for code_obj in icd10_list:
+                            if isinstance(code_obj, dict) and "code" in code_obj:
+                                code = code_obj["code"]
+                                if code:
+                                    codes.append(code)
+                        return ", ".join(codes) if codes else ""
+                    return ""
+                except:
+                    return ""
+
+            # Helper function to format HCPCS codes
+            def format_hcpcs_codes(hcpcs_list):
+                """Format HCPCS codes into a readable string"""
+                try:
+                    if isinstance(hcpcs_list, list):
+                        codes = []
+                        for code_obj in hcpcs_list:
+                            if isinstance(code_obj, dict) and "code" in code_obj:
+                                code = code_obj["code"]
+                                if code:
+                                    codes.append(code)
+                        return ", ".join(codes) if codes else ""
+                    return ""
+                except:
+                    return ""
+
+            # Helper function to format item descriptions
+            def format_item_descriptions(items_list):
+                """Format item descriptions into a readable string"""
+                try:
+                    if isinstance(items_list, list):
+                        descriptions = []
+                        for item in items_list:
+                            if isinstance(item, dict) and "value" in item:
+                                desc = item["value"]
+                                if desc:
+                                    descriptions.append(desc)
+                            elif isinstance(item, str) and item:
+                                descriptions.append(item)
+                        return "; ".join(descriptions) if descriptions else ""
+                    return ""
+                except:
+                    return ""
+
+            # Helper function to get full name components
+            def get_name_components(full_name):
+                """Split full name into first and last name"""
+                try:
+                    if full_name:
+                        parts = full_name.strip().split()
+                        if len(parts) >= 2:
+                            first_name = parts[0]
+                            last_name = " ".join(parts[1:])
+                            return first_name, last_name
+                        elif len(parts) == 1:
+                            return parts[0], ""
+                    return "", ""
+                except:
+                    return "", ""
+
+            # Get full name and split it
+            full_name = safe_get(extracted_data, "patient_information.full_name")
+            first_name, last_name = get_name_components(full_name)
+
+            # Get address components
+            address_dict = safe_get(extracted_data, "patient_information.address", {})
+            street = get_address_component(address_dict, "street")
+            city = get_address_component(address_dict, "city")
+            zip_code = get_address_component(address_dict, "zip")
+
+            # Get state from address
+            state = get_address_component(address_dict, "state")
+
+            # Comprehensive field mapping for Patient Intake Form
+            field_map = {
+                # Patient Information
+                "last name": last_name,
+                "first name": first_name,
+                "address": street,
+                "city": city,
+                "zip": zip_code,
+                "phone": get_first_phone(safe_get(extracted_data, "patient_information.phone_numbers", [])),
+                "date of birth": safe_get(extracted_data, "patient_information.date_of_birth"),
+                "SSN": safe_get(extracted_data, "patient_information.ssn"),
+                "supply start date": safe_get(extracted_data, "orders_dme_details.supply_start_date"),
+                
+                # Emergency Contact
+                "emergency name": safe_get(extracted_data, "patient_information.emergency_contact.name"),
+                "emergency phone": safe_get(extracted_data, "patient_information.emergency_contact.phone"),
+                
+                # Provider Information
+                "provider name": safe_get(extracted_data, "provider_prescriber.provider_full_name"),
+                "npi number": safe_get(extracted_data, "provider_prescriber.npi_number"),
+                "prescriber address": self._get_full_address(safe_get(extracted_data, "provider_prescriber.clinic_address", {})),
+                "prescriber phone": safe_get(extracted_data, "provider_prescriber.clinic_phone"),
+                
+                # Clinical Information
+                "icd10 codes": format_icd10_codes(safe_get(extracted_data, "clinical_documentation.icd10_codes", [])),
+                
+                # Insurance Information
+                "policy member id": safe_get(extracted_data, "insurance_billing.policy_member_id"),
+                "guarantor name": safe_get(extracted_data, "insurance_billing.guarantor.name"),
+                
+                # DME Details
+                "item description and services needed": format_item_descriptions(safe_get(extracted_data, "orders_dme_details.item_descriptions", [])),
+                
+                # Administrative
+                "administrative date received": safe_get(extracted_data, "administrative_tracking.internal_case_id"),
+                "full name": full_name,  # Duplicate field for full name
+                "admission date": safe_get(extracted_data, "clinical_documentation.onset_or_injury_date"),
+                "phone number": get_first_phone(safe_get(extracted_data, "patient_information.phone_numbers", [])),  # Duplicate phone field
+                "item descriptions and hcpcs codes": f"{format_item_descriptions(safe_get(extracted_data, 'orders_dme_details.item_descriptions', []))} - {format_hcpcs_codes(safe_get(extracted_data, 'orders_dme_details.hcpcs_codes', []))}",
+                
+                # Special field mapping for state
+                "Text-ca7ONFbtHI": state,
+            }
+
+            # Fill the form fields
+            filled_count = 0
+            for page in doc:
+                widgets = page.widgets()
+                if not widgets:
+                    continue
+                for w in widgets:
+                    if w.field_name in field_map:
+                        value = field_map[w.field_name]
+                        if value:
+                            # Set the field value
+                            w.field_value = str(value)
+                            
+                            # Set font size to 9pt (readable and professional)
+                            w.text_fontsize = 9
+                            
+                            # Update the widget to apply changes
+                            w.update()
+                            
+                            filled_count += 1
+                            print(f"✅ Filled '{w.field_name}' with '{value}'")
+                        else:
+                            print(f"⚠️ No value for field '{w.field_name}'")
+                    else:
+                        print(f"❌ No mapping for field: '{w.field_name}'")
+            
+            print(f"📊 Total fields filled: {filled_count}")
+
+            # Save the filled PDF first
+            temp_path = output_path.replace('.pdf', '_temp.pdf')
+            doc.save(temp_path)
+            doc.close()
+
+            # Convert to non-editable by rendering to images
+            self._convert_to_non_editable(temp_path, output_path)
+
+            # Clean up temp file
+            import os
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+
+            return output_path
+
+        except Exception as e:
+            print(f"Error filling Patient Intake Form PDF: {e}")
+            raise e
+
     def fill_non_medicare_dme_intake_form(self, pdf_path, extracted_data, output_path="filled_non_medicare_dme_intake_form.pdf"):
         try:
             doc = fitz.open(pdf_path)
@@ -562,6 +808,13 @@ class PdfProcessor:
                         if "purewick" in temp.name.lower():
                             logger.info("Using Purewick resupply agreement filling function")
                             filled_pdf_path = self.fill_purewick_resupply_agreement(
+                                temp_pdf_path, 
+                                json_result, 
+                                output_pdf_path
+                            )
+                        elif "patient intake form" in temp.name.lower():
+                            logger.info("Using Patient Intake Form filling function")
+                            filled_pdf_path = self.fill_patient_intake_form(
                                 temp_pdf_path, 
                                 json_result, 
                                 output_pdf_path

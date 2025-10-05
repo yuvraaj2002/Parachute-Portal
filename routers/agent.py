@@ -452,14 +452,14 @@ async def get_user_document_groups(
         }
         
         # Cache the response for 60 seconds
-        logger.info(f"💾 Setting cache for user {current_user.id} with key: {cache_key}")
-        logger.info(f"📊 Response data size: {len(json.dumps(response_data))} characters")
-        logger.info(f"📋 Response contains {len(response_data.get('document_groups', []))} document groups")
+        logger.info(f"Setting cache for user {current_user.id} with key: {cache_key}")
+        logger.info(f"Response data size: {len(json.dumps(response_data))} characters")
+        logger.info(f"Response contains {len(response_data.get('document_groups', []))} document groups")
         
-        cache_success = redis_service.set_key(cache_key, json.dumps(response_data), expire_seconds=60)
-        logger.info(f"✅ Cache set result: {'SUCCESS' if cache_success else 'FAILED'}")
+        cache_success = redis_service.set_key(cache_key, json.dumps(response_data), expire_seconds=15)
+        logger.info(f"Cache set result: {'SUCCESS' if cache_success else 'FAILED'}")
         if cache_success:
-            logger.info(f"⏰ Cache will expire in 60 seconds (key: {cache_key})")
+            logger.info(f"Cache will expire in 60 seconds (key: {cache_key})")
         
         logger.info(f"Document groups for user {current_user.id} retrieved successfully (page {page}/{total_pages})")
         
