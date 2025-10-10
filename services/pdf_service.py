@@ -219,48 +219,6 @@ class PdfProcessor:
         try:
             doc = fitz.open(pdf_path)
 
-            # Helper function to safely get nested values
-            def safe_get(data, path, default=""):
-                """Safely navigate nested dictionary structure"""
-                try:
-                    keys = path.split('.')
-                    result = data
-                    for key in keys:
-                        if isinstance(result, dict) and key in result:
-                            result = result[key]
-                            if isinstance(result, dict) and "value" in result:
-                                result = result["value"]
-                        else:
-                            return default
-                    return result if result else default
-                except:
-                    return default
-
-            # Helper function to get first phone number
-            def get_first_phone(phone_list):
-                """Get the first phone number from the phone_numbers array"""
-                try:
-                    if isinstance(phone_list, list) and len(phone_list) > 0:
-                        phone = phone_list[0]
-                        if isinstance(phone, dict):
-                            return phone.get("value", phone.get("original_text", ""))
-                    return ""
-                except:
-                    return ""
-
-            # Helper function to get address components
-            def get_address_component(address_dict, component):
-                """Get specific address component"""
-                try:
-                    if isinstance(address_dict, dict) and component in address_dict:
-                        comp = address_dict[component]
-                        if isinstance(comp, dict) and "value" in comp:
-                            return comp["value"]
-                        return str(comp) if comp else ""
-                    return ""
-                except:
-                    return ""
-
             # Helper function to format ICD10 codes
             def format_icd10_codes(icd10_list):
                 """Format ICD10 codes into a readable string"""
@@ -328,17 +286,17 @@ class PdfProcessor:
                     return "", ""
 
             # Get full name and split it
-            full_name = safe_get(extracted_data, "patient_information.full_name")
+            full_name = self._safe_get(extracted_data, "patient_information.full_name")
             first_name, last_name = get_name_components(full_name)
 
             # Get address components
-            address_dict = safe_get(extracted_data, "patient_information.address", {})
-            street = get_address_component(address_dict, "street")
-            city = get_address_component(address_dict, "city")
-            zip_code = get_address_component(address_dict, "zip")
+            address_dict = self._safe_get(extracted_data, "patient_information.address", {})
+            street = self._get_address_component(address_dict, "street")
+            city = self._get_address_component(address_dict, "city")
+            zip_code = self._get_address_component(address_dict, "zip")
 
             # Get state from address
-            state = get_address_component(address_dict, "state")
+            state = self._get_address_component(address_dict, "state")
 
             # Comprehensive field mapping for Patient Intake Form
             field_map = {
@@ -348,37 +306,37 @@ class PdfProcessor:
                 "address": street,
                 "city": city,
                 "zip": zip_code,
-                "phone": get_first_phone(safe_get(extracted_data, "patient_information.phone_numbers", [])),
-                "date of birth": safe_get(extracted_data, "patient_information.date_of_birth"),
-                "SSN": safe_get(extracted_data, "patient_information.ssn"),
-                "supply start date": safe_get(extracted_data, "orders_dme_details.supply_start_date"),
+                "phone": self._get_first_phone(self._safe_get(extracted_data, "patient_information.phone_numbers", [])),
+                "date of birth": self._safe_get(extracted_data, "patient_information.date_of_birth"),
+                "SSN": self._safe_get(extracted_data, "patient_information.ssn"),
+                "supply start date": self._safe_get(extracted_data, "orders_dme_details.supply_start_date"),
                 
                 # Emergency Contact
-                "emergency name": safe_get(extracted_data, "patient_information.emergency_contact.name"),
-                "emergency phone": safe_get(extracted_data, "patient_information.emergency_contact.phone"),
+                "emergency name": self._safe_get(extracted_data, "patient_information.emergency_contact.name"),
+                "emergency phone": self._safe_get(extracted_data, "patient_information.emergency_contact.phone"),
                 
                 # Provider Information
-                "provider name": safe_get(extracted_data, "provider_prescriber.provider_full_name"),
-                "npi number": safe_get(extracted_data, "provider_prescriber.npi_number"),
-                "prescriber address": self._get_full_address(safe_get(extracted_data, "provider_prescriber.clinic_address", {})),
-                "prescriber phone": safe_get(extracted_data, "provider_prescriber.clinic_phone"),
+                "provider name": self._safe_get(extracted_data, "provider_prescriber.provider_full_name"),
+                "npi number": self._safe_get(extracted_data, "provider_prescriber.npi_number"),
+                "prescriber address": self._get_full_address(self._safe_get(extracted_data, "provider_prescriber.clinic_address", {})),
+                "prescriber phone": self._safe_get(extracted_data, "provider_prescriber.clinic_phone"),
                 
                 # Clinical Information
-                "icd10 codes": format_icd10_codes(safe_get(extracted_data, "clinical_documentation.icd10_codes", [])),
+                "icd10 codes": format_icd10_codes(self._safe_get(extracted_data, "clinical_documentation.icd10_codes", [])),
                 
                 # Insurance Information
-                "policy member id": safe_get(extracted_data, "insurance_billing.policy_member_id"),
-                "guarantor name": safe_get(extracted_data, "insurance_billing.guarantor.name"),
+                "policy member id": self._safe_get(extracted_data, "insurance_billing.policy_member_id"),
+                "guarantor name": self._safe_get(extracted_data, "insurance_billing.guarantor.name"),
                 
                 # DME Details
-                "item description and services needed": format_item_descriptions(safe_get(extracted_data, "orders_dme_details.item_descriptions", [])),
+                "item description and services needed": format_item_descriptions(self._safe_get(extracted_data, "orders_dme_details.item_descriptions", [])),
                 
                 # Administrative
-                "administrative date received": safe_get(extracted_data, "administrative_tracking.internal_case_id"),
+                "administrative date received": self._safe_get(extracted_data, "administrative_tracking.internal_case_id"),
                 "full name": full_name,  # Duplicate field for full name
-                "admission date": safe_get(extracted_data, "clinical_documentation.onset_or_injury_date"),
-                "phone number": get_first_phone(safe_get(extracted_data, "patient_information.phone_numbers", [])),  # Duplicate phone field
-                "item descriptions and hcpcs codes": f"{format_item_descriptions(safe_get(extracted_data, 'orders_dme_details.item_descriptions', []))} - {format_hcpcs_codes(safe_get(extracted_data, 'orders_dme_details.hcpcs_codes', []))}",
+                "admission date": self._safe_get(extracted_data, "clinical_documentation.onset_or_injury_date"),
+                "phone number": self._get_first_phone(self._safe_get(extracted_data, "patient_information.phone_numbers", [])),  # Duplicate phone field
+                "item descriptions and hcpcs codes": f"{format_item_descriptions(self._safe_get(extracted_data, 'orders_dme_details.item_descriptions', []))} - {format_hcpcs_codes(self._safe_get(extracted_data, 'orders_dme_details.hcpcs_codes', []))}",
                 
                 # Special field mapping for state
                 "Text-ca7ONFbtHI": state,
@@ -670,7 +628,234 @@ class PdfProcessor:
         except Exception as e:
             print(f"Error filling comprehensive PDF: {e}")
             raise e
+
+    def fill_patient_authorization_form(self, pdf_path, extracted_data, output_path="filled_patient_authorization_form.pdf"):
+        """
+        Fill the Patient Authorization Form with extracted data.
+        
+        Maps the extracted data from the schema to the PDF form fields:
+        - full name -> patient_information.full_name
+        - address -> patient_information.address (full address string)
+        - City -> patient_information.address.city
+        - State -> patient_information.address.state
+        - ZIP Code -> patient_information.address.zip
+        - Phone Number -> patient_information.phone_numbers[0]
+        - Email Address -> patient_information.email
+        """
+        try:
+            doc = fitz.open(pdf_path)
+
+            # Get address components
+            address_dict = self._safe_get(extracted_data, "patient_information.address", {})
+            street = self._get_address_component(address_dict, "street")
+            city = self._get_address_component(address_dict, "city")
+            state = self._get_address_component(address_dict, "state")
+            zip_code = self._get_address_component(address_dict, "zip")
+
+            # Comprehensive field mapping for Patient Authorization Form
+            field_map = {
+                # Patient Information
+                "full name": self._safe_get(extracted_data, "patient_information.full_name"),
+                "address": self._get_full_address(self._safe_get(extracted_data, "patient_information.address", {})),
+                "City": city,
+                "State": state,
+                "ZIP Code": zip_code,
+                "Phone Number": self._get_first_phone(self._safe_get(extracted_data, "patient_information.phone_numbers", [])),
+                "Email Address": self._safe_get(extracted_data, "patient_information.email"),
+            }
+
+            filled_count = 0
+            for page in doc:
+                widgets = page.widgets()
+                if not widgets:
+                    continue
+                for w in widgets:
+                    if w.field_name in field_map:
+                        value = field_map[w.field_name]
+                        if value:
+                            w.field_value = str(value)
+                            try:
+                                # Set font properties for better appearance
+                                w.text_fontsize = 10  # Font size
+                                w.field_text_color = (0, 0, 0)  # Black text
+                            except:
+                                pass
+                            w.update()
+                            filled_count += 1
+                            print(f"✅ Filled '{w.field_name}' with '{value}'")
+                        else:
+                            print(f"⚠️ No value for field '{w.field_name}'")
+                    else:
+                        print(f"❌ No mapping for field: '{w.field_name}'")
+
+            print(f"📊 Total fields filled: {filled_count}")
+
+            # Save the filled PDF first
+            print(f"💾 Saving filled PDF...")
+            temp_path = output_path.replace('.pdf', '_temp.pdf')
+            doc.save(temp_path)
+            doc.close()
+            
+            # Convert to non-editable by rendering to images
+            print(f"🔒 Converting to non-editable format...")
+            self._convert_to_non_editable(temp_path, output_path)
+            
+            # Clean up temp file
+            import os
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+            
+            print(f"✅ PDF filled and made non-editable! Filled {filled_count} fields.")
+            return output_path
+
+        except Exception as e:
+            print(f"Error filling Patient Authorization Form PDF: {e}")
+            raise e
     
+    def fill_patient_notes(self, pdf_path, extracted_data, output_path="filled_patient_notes.pdf"):
+        try:
+            doc = fitz.open(pdf_path)
+
+            # Explicit mapping field
+            field_map = {"full name": extracted_data["patient_information"]["full_name"]["value"],}
+
+            filled_count = 0
+            for page in doc:
+                widgets = page.widgets()
+                if not widgets:
+                    continue
+                for w in widgets:
+                    if w.field_name in field_map:
+                        value = field_map[w.field_name]
+                        if value:
+                            w.field_value = str(value)
+                            try:
+                                # Set font properties for better appearance
+                                w.text_fontsize = 10  # Small font size
+                                w.field_text_color = (0, 0, 0)  # Black text
+                            except:
+                                pass
+                            w.update()
+                            filled_count += 1
+                            print(f"✅ Filled '{w.field_name}' with '{value}'")
+
+            # Save the filled PDF first
+            print(f"💾 Saving filled PDF...")
+            temp_path = output_path.replace('.pdf', '_temp.pdf')
+            doc.save(temp_path)
+            doc.close()
+            
+            # Convert to non-editable by rendering to images
+            print(f"🔒 Converting to non-editable format...")
+            self._convert_to_non_editable(temp_path, output_path)
+            
+            # Clean up temp file
+            import os
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+            
+            print(f"✅ PDF filled and made non-editable! Filled {filled_count} fields.")
+            return output_path
+
+        except Exception as e:
+            print(f"Error filling PDF: {e}")
+            raise e
+
+    def fill_patient_service_agreement(self, pdf_path, extracted_data, output_path="filled_patient_service_agreement.pdf"):
+        """
+        Fill the Patient Service Agreement with extracted data.
+        
+        Maps the extracted data from the schema to the PDF form fields:
+        - full name -> patient_information.full_name
+        - first name -> patient_information.full_name (first word)
+        - insurance id -> insurance_billing.mbi_or_medicaid_id (with fallback to policy_member_id)
+        """
+        try:
+            doc = fitz.open(pdf_path)
+
+            # Helper function to get insurance ID with fallback
+            def get_insurance_id():
+                """Get insurance ID - try mbi_or_medicaid_id first, fallback to policy_member_id"""
+                try:
+                    # Try mbi_or_medicaid_id first
+                    mbi_value = self._safe_get(extracted_data, "insurance_billing.mbi_or_medicaid_id")
+                    if mbi_value:
+                        return str(mbi_value)
+                    
+                    # Fallback to policy_member_id
+                    policy_value = self._safe_get(extracted_data, "insurance_billing.policy_member_id")
+                    if policy_value:
+                        return str(policy_value)
+                    
+                    return ""
+                except:
+                    return ""
+
+            # Get full name and extract first name
+            full_name = self._safe_get(extracted_data, "patient_information.full_name")
+            first_name = self._get_first_name(full_name) if full_name else ""
+
+            # Field mapping with fallback logic
+            field_map = {
+                "full name": full_name,
+                "first name": first_name,
+                "insurance id": get_insurance_id()
+            }
+
+            filled_count = 0
+            for page in doc:
+                widgets = page.widgets()
+                if not widgets:
+                    continue
+                for w in widgets:
+                    if w.field_name in field_map:
+                        value = field_map[w.field_name]
+                        if value:
+                            w.field_value = str(value)
+                            try:
+                                # Set font properties for better appearance
+                                w.text_fontsize = 10  # Font size
+                                w.field_text_color = (0, 0, 0)  # Black text
+                            except:
+                                pass
+                            w.update()
+                            filled_count += 1
+                            print(f"✅ Filled '{w.field_name}' with '{value}'")
+                        else:
+                            print(f"⚠️ No value for field '{w.field_name}'")
+                    else:
+                        print(f"❌ No mapping for field: '{w.field_name}'")
+
+            print(f"📊 Total fields filled: {filled_count}")
+
+            # Save the filled PDF first
+            print(f"💾 Saving filled PDF...")
+            temp_path = output_path.replace('.pdf', '_temp.pdf')
+            doc.save(temp_path)
+            doc.close()
+            
+            # Convert to non-editable by rendering to images
+            print(f"🔒 Converting to non-editable format...")
+            self._convert_to_non_editable(temp_path, output_path)
+            
+            # Clean up temp file
+            import os
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+            
+            print(f"✅ PDF filled and made non-editable! Filled {filled_count} fields.")
+            return output_path
+
+        except Exception as e:
+            print(f"Error filling Patient Service Agreement PDF: {e}")
+            raise e
+
     def _get_value_from_schema(self, data, path):
         """Helper: fetch nested value from dict using dot path"""
         try:
@@ -708,6 +893,53 @@ class PdfProcessor:
             return name_parts[-1] if name_parts else ""
         return ""
 
+    def _safe_get(self, data, path, default=""):
+        """Helper method to safely navigate nested dictionary structure"""
+        try:
+            keys = path.split('.')
+            result = data
+            for key in keys:
+                if isinstance(result, dict) and key in result:
+                    result = result[key]
+                    if isinstance(result, dict) and "value" in result:
+                        result = result["value"]
+                else:
+                    return default
+            # Handle None values and empty strings
+            if result is None:
+                return default
+            # Don't convert dicts or lists to strings - return as-is
+            if isinstance(result, (dict, list)):
+                return result
+            return str(result) if result else default
+        except:
+            return default
+
+    def _get_first_phone(self, phone_list):
+        """Helper method to get the first phone number from the phone_numbers array"""
+        try:
+            if isinstance(phone_list, list) and len(phone_list) > 0:
+                phone = phone_list[0]
+                if isinstance(phone, dict):
+                    value = phone.get("value") or phone.get("original_text", "")
+                    return str(value) if value else ""
+            return ""
+        except:
+            return ""
+
+    def _get_address_component(self, address_dict, component):
+        """Helper method to get specific address component"""
+        try:
+            if isinstance(address_dict, dict) and component in address_dict:
+                comp = address_dict[component]
+                if isinstance(comp, dict) and "value" in comp:
+                    value = comp["value"]
+                    return str(value) if value is not None else ""
+                return str(comp) if comp is not None else ""
+            return ""
+        except:
+            return ""
+
     def _get_full_address(self, address_dict):
         """Helper method to create full address string from address dictionary"""
         if not isinstance(address_dict, dict):
@@ -720,9 +952,9 @@ class PdfProcessor:
                 value = address_dict[component]
                 if isinstance(value, dict) and "value" in value:
                     val = value["value"]
-                    if val:  # Only add non-empty values
-                        address_parts.append(val)
-                elif isinstance(value, str) and value:  # Only add non-empty strings
+                    if val is not None and str(val).strip():  # Only add non-empty values
+                        address_parts.append(str(val))
+                elif isinstance(value, str) and value.strip():  # Only add non-empty strings
                     address_parts.append(value)
         
         return " ".join(address_parts) if address_parts else ""
@@ -833,7 +1065,28 @@ class PdfProcessor:
                                 json_result, 
                                 output_pdf_path
                             )
-                        elif any(x in temp.name for x in ["Payment Authorization Form", "Patient Service Agreement", "Ongoing Rental Agreement", "Patient Handout", "Patient Notes", "Equipment Warranty Information", "Medicare Capped Rental"]):
+                        elif "Patient Notes" in temp.name or "Ongoing Rental Agreement" in temp.name:
+                            logger.info("Using Patient Notes filling function")
+                            filled_pdf_path = self.fill_patient_notes(
+                                temp_pdf_path, 
+                                json_result, 
+                                output_pdf_path
+                            )
+                        elif "Payment Authorization Form" in temp.name:
+                            logger.info("Using Patient Authorization Form filling function")
+                            filled_pdf_path = self.fill_patient_authorization_form(
+                                temp_pdf_path, 
+                                json_result, 
+                                output_pdf_path
+                            )
+                        elif "Patient Service Agreement" in temp.name:
+                            logger.info("Using Patient Service Agreement filling function")
+                            filled_pdf_path = self.fill_patient_service_agreement(
+                                temp_pdf_path, 
+                                json_result, 
+                                output_pdf_path
+                            )
+                        elif any(x in temp.name for x in ["Patient Handout", "Equipment Warranty Information", "Medicare Capped Rental"]):
                             # Return the PDF as it is from the s3 bucket
                             filled_pdf_path = temp_pdf_path
 
@@ -913,6 +1166,9 @@ class PdfProcessor:
         except Exception as e:
             logger.error(f"Error filling PDF templates: {e}")
             raise e
+
+    
+
 
 if __name__ == "__main__":
     PDF_PATH = "/content/dbd994f3-32d4-4d88-b991-22075124f480.pdf"  # Replace with your actual PDF file path

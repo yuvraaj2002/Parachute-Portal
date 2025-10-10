@@ -184,9 +184,9 @@ def _get_full_address(address_dict):
             value = address_dict[component]
             if isinstance(value, dict) and "value" in value:
                 val = value["value"]
-                if val:  # Only add non-empty values
-                    address_parts.append(val)
-            elif isinstance(value, str) and value:  # Only add non-empty strings
+                if val is not None and str(val).strip():  # Only add non-empty values
+                    address_parts.append(str(val))
+            elif isinstance(value, str) and value.strip():  # Only add non-empty strings
                 address_parts.append(value)
     
     return " ".join(address_parts) if address_parts else ""
@@ -349,7 +349,13 @@ def fill_patient_intake_form(pdf_path, extracted_data, output_path="filled_patie
                             result = result["value"]
                     else:
                         return default
-                return result if result else default
+                # Handle None values and empty strings
+                if result is None:
+                    return default
+                # Don't convert dicts or lists to strings - return as-is
+                if isinstance(result, (dict, list)):
+                    return result
+                return str(result) if result else default
             except:
                 return default
 
@@ -574,12 +580,202 @@ def fill_purewick_resupply_agreement(pdf_path, extracted_data, output_path="fill
     except Exception as e:
         print(f"Error filling PDF: {e}")
 
+def fill_patient_authorization_form(pdf_path, extracted_data, output_path="filled_patient_authorization_form.pdf"):
+    """
+    Fill the Patient Authorization Form with extracted data.
+    
+    Maps the extracted data from the schema to the PDF form fields:
+    - full name -> patient_information.full_name
+    - address -> patient_information.address (full address string)
+    - City -> patient_information.address.city
+    - State -> patient_information.address.state
+    - ZIP Code -> patient_information.address.zip
+    - Phone Number -> patient_information.phone_numbers[0]
+    - Email Address -> patient_information.email
+    """
+    try:
+        doc = fitz.open(pdf_path)
+
+        # Helper function to safely get nested values
+        def safe_get(data, path, default=""):
+            """Safely navigate nested dictionary structure"""
+            try:
+                keys = path.split('.')
+                result = data
+                for key in keys:
+                    if isinstance(result, dict) and key in result:
+                        result = result[key]
+                        if isinstance(result, dict) and "value" in result:
+                            result = result["value"]
+                    else:
+                        return default
+                # Handle None values and empty strings
+                if result is None:
+                    return default
+                # Don't convert dicts or lists to strings - return as-is
+                if isinstance(result, (dict, list)):
+                    return result
+                return str(result) if result else default
+            except:
+                return default
+
+        # Helper function to get first phone number
+        def get_first_phone(phone_list):
+            """Get the first phone number from the phone_numbers array"""
+            try:
+                if isinstance(phone_list, list) and len(phone_list) > 0:
+                    phone = phone_list[0]
+                    if isinstance(phone, dict):
+                        value = phone.get("value") or phone.get("original_text", "")
+                        return str(value) if value else ""
+                return ""
+            except:
+                return ""
+
+        # Helper function to get address components
+        def get_address_component(address_dict, component):
+            """Get specific address component"""
+            try:
+                if isinstance(address_dict, dict) and component in address_dict:
+                    comp = address_dict[component]
+                    if isinstance(comp, dict) and "value" in comp:
+                        value = comp["value"]
+                        return str(value) if value is not None else ""
+                    return str(comp) if comp is not None else ""
+                return ""
+            except:
+                return ""
+
+        # Get address components
+        address_dict = safe_get(extracted_data, "patient_information.address", {})
+        city = get_address_component(address_dict, "city")
+        state = get_address_component(address_dict, "state")
+        zip_code = get_address_component(address_dict, "zip")
+
+        # Comprehensive field mapping for Patient Authorization Form
+        field_map = {
+            # Patient Information
+            "full name": safe_get(extracted_data, "patient_information.full_name"),
+            "address": _get_full_address(safe_get(extracted_data, "patient_information.address", {})),
+            "City": city,
+            "State": state,
+            "ZIP Code": zip_code,
+            "Phone Number": get_first_phone(safe_get(extracted_data, "patient_information.phone_numbers", [])),
+            "Email Address": safe_get(extracted_data, "patient_information.email"),
+        }
+
+        filled_count = 0
+        for page in doc:
+            widgets = page.widgets()
+            if not widgets:
+                continue
+            for w in widgets:
+                if w.field_name in field_map:
+                    value = field_map[w.field_name]
+                    if value:
+                        w.field_value = str(value)
+                        try:
+                            # Set font properties for better appearance
+                            w.text_fontsize = 10  # Font size
+                            w.field_text_color = (0, 0, 0)  # Black text
+                        except:
+                            pass
+                        w.update()
+                        filled_count += 1
+                        print(f"✅ Filled '{w.field_name}' with '{value}'")
+                    else:
+                        print(f"⚠️ No value for field '{w.field_name}'")
+                else:
+                    print(f"❌ No mapping for field: '{w.field_name}'")
+
+        print(f"📊 Total fields filled: {filled_count}")
+
+        doc.save(output_path)
+        doc.close()
+        print(f"✅ PDF filled and saved as {output_path}. Filled {filled_count} fields.")
+
+    except Exception as e:
+        print(f"Error filling Patient Authorization Form PDF: {e}")
+        raise e
+
+def fill_patient_service_agreement(pdf_path, extracted_data, output_path="filled_patient_service_agreement.pdf"):
+    try:
+        doc = fitz.open(pdf_path)
+
+        # Helper function to get insurance ID with fallback
+        def get_insurance_id():
+            """Get insurance ID - try mbi_or_medicaid_id first, fallback to policy_member_id"""
+            try:
+                mbi = extracted_data.get("insurance_billing", {}).get("mbi_or_medicaid_id", {})
+                if isinstance(mbi, dict):
+                    mbi_value = mbi.get("value")
+                    if mbi_value:
+                        return str(mbi_value)
+                
+                # Fallback to policy_member_id
+                policy = extracted_data.get("insurance_billing", {}).get("policy_member_id", {})
+                if isinstance(policy, dict):
+                    policy_value = policy.get("value")
+                    if policy_value:
+                        return str(policy_value)
+                
+                return ""
+            except:
+                return ""
+
+        # Helper function to get first name
+        def get_first_name():
+            """Extract first name from full name"""
+            try:
+                full_name = extracted_data.get("patient_information", {}).get("full_name", {}).get("value", "")
+                if full_name:
+                    return full_name.split()[0]
+                return ""
+            except:
+                return ""
+
+        # Field mapping with fallback logic
+        field_map = {
+            "full name": extracted_data.get("patient_information", {}).get("full_name", {}).get("value", ""),
+            "first name": get_first_name(),
+            "insurance id": get_insurance_id()
+        }
+
+        filled_count = 0
+        for page in doc:
+            widgets = page.widgets()
+            if not widgets:
+                continue
+            for w in widgets:
+                if w.field_name in field_map:
+                    value = field_map[w.field_name]
+                    if value:
+                        w.field_value = str(value)
+                        try:
+                            # Set font properties for better appearance
+                            w.text_fontsize = 8  # Small font size
+                            w.field_text_color = (0, 0, 0)  # Black text
+                        except:
+                            pass
+                        w.update()
+                        filled_count += 1
+                        print(f"✅ Filled '{w.field_name}' with '{value}'")
+
+        doc.save(output_path)
+        doc.close()
+        print(f"✅ PDF filled and saved as {output_path}. Filled {filled_count} fields.")
+
+    except Exception as e:
+        print(f"Error filling PDF: {e}")
+        raise e
+
 
 # Example usage
 if __name__ == "__main__":
     # Example 1: List all editable fields in a PDF
-    pdf_path = "/Users/yuvrajsingh/Documents/AI Development/Freelance/Parachute_Portal/docs/Generate_Pdfs/Non medicare/Patient Intake Form - Non Medicare Intake Form.pdf"
+    pdf_path = "/Users/yuvrajsingh/Documents/AI Development/Freelance/Parachute_Portal/docs/Generate_Pdfs/Non medicare/Patient Service Agreement.pdf"
     #fields = list_editable_fields(pdf_path)
+    fill_patient_service_agreement(pdf_path, results)
     
-    fill_patient_intake_form(pdf_path, results)
+    #fill_patient_intake_form(pdf_path, results)
     #fill_patient_financial_responsibilty_template(pdf_path, results)
